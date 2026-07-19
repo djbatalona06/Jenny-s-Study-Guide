@@ -1,0 +1,20 @@
+{
+  "name": "jennys-study-guide",
+  "version": "1.0.0",
+  "description": "Jenny's TEAS 7 Study Guide - Science flashcards",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'Build successful - no build step required for this static site'",
+    "lint": "echo 'No linter configured - manual code review recommended'"
+  },
+  "keywords": [
+    "flashcards",
+    "study-guide",
+    "TEAS"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@vercel/speed-insights": "^2.0.0"
+  }
+}
