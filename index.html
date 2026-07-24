@@ -965,10 +965,11 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     { id: "skeleton", name: "Skeletal System", emoji: "🦴", model: "overview-skeleton.glb", glb: true, proc: "skeleton", deck: "anatomy", blurb: "206 bones forming the axial and appendicular skeleton — full-body overview." },
     { id: "skull", name: "Skull", emoji: "💀", model: "skull.glb", proc: "skull", deck: "anatomy", blurb: "Cranial and facial bones protecting the brain." },
     { id: "lungs", name: "Respiratory", emoji: "🫁", model: "overview-skeleton.glb", glb: true, placeholder: true, proc: "lungs", deck: "anatomy", blurb: "Airways and lungs that exchange oxygen and carbon dioxide." },
-    { id: "brain", name: "Brain", emoji: "🧠", model: "brain.glb", proc: "brain", deck: "anatomy", blurb: "Cerebrum, cerebellum, and brainstem of the central nervous system." },
-    { id: "cell", name: "Animal Cell", emoji: "🦠", model: "cell.glb", proc: "cell", deck: "teas-science", blurb: "Organelles: nucleus, mitochondria, ER, and more — core TEAS science." },
+    { id: "brain", name: "Brain", emoji: "🧠", model: "brain.glb", glb: true, proc: "brain", deck: "anatomy", blurb: "Cerebrum, cerebellum, and brainstem of the central nervous system." },
+    { id: "eye", name: "Eye", emoji: "👁️", model: "eye.glb", glb: true, proc: "eye", deck: "anatomy", blurb: "Cornea, iris, lens, and retina — how the eye focuses light and turns it into signals for the brain." },
+    { id: "cell", name: "Animal Cell", emoji: "🦠", model: "cell.glb", glb: true, proc: "cell", deck: "teas-science", blurb: "Organelles: nucleus, mitochondria, ER, and more — core TEAS science." },
     { id: "kidney", name: "Kidney", emoji: "🫘", model: "overview-skeleton.glb", glb: true, placeholder: true, proc: "kidney", deck: "anatomy", blurb: "Filters blood and forms urine in the urinary system." },
-    { id: "dna", name: "DNA", emoji: "🧬", model: "overview-skeleton.glb", glb: true, placeholder: true, proc: "dna", deck: "teas-science", blurb: "The double helix carrying genetic information." },
+    { id: "dna", name: "DNA", emoji: "🧬", model: "dna.glb", glb: true, proc: "dna", deck: "teas-science", blurb: "The double helix carrying genetic information." },
     { id: "upper-limb", name: "Upper Limb", emoji: "💪", model: "upper-limb.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Bones and structures of the arm, forearm, and shoulder girdle." },
     { id: "lower-limb", name: "Lower Limb", emoji: "🦵", model: "lower-limb.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Bones and structures of the thigh, leg, and pelvic girdle." },
     { id: "hand", name: "Hand", emoji: "🖐️", model: "hand.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Carpals, metacarpals, and phalanges of the hand and wrist." }
@@ -1245,7 +1246,15 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       { id: "ap7-58", term: "What structure produces sweat to help cool the body?", def: "Sweat glands (sudoriferous glands)" },
       { id: "ap7-59", term: "What is the female gamete called?", def: "Ovum (egg)" },
       { id: "ap7-60", term: "Where does fertilization normally occur?", def: "In the fallopian tube (oviduct)" },
-      { id: "ap7-61", term: "What hormone maintains the uterine lining during early pregnancy?", def: "Progesterone" }
+      { id: "ap7-61", term: "What hormone maintains the uterine lining during early pregnancy?", def: "Progesterone" },
+      // ---- Eye / vision (paired with the 3D Eye model) ----
+      { id: "eye1", term: "Cornea", def: "The clear, dome-shaped front layer of the eye that refracts (bends) incoming light — does most of the eye's focusing." },
+      { id: "eye2", term: "Iris and pupil", def: "The iris is the colored muscle that controls how much light enters; the pupil is the central opening it widens or narrows." },
+      { id: "eye3", term: "Lens", def: "Sits behind the iris and fine-focuses light onto the retina by changing shape (a process called accommodation)." },
+      { id: "eye4", term: "Retina", def: "The light-sensitive layer lining the back of the eye; contains photoreceptors (rods and cones) that convert light to nerve signals." },
+      { id: "eye5", term: "Rods vs. cones", def: "Rods detect dim light and motion (black-and-white); cones detect color and sharp detail in bright light." },
+      { id: "eye6", term: "Optic nerve", def: "Carries visual signals from the retina to the brain; its exit point creates the eye's blind spot." },
+      { id: "eye7", term: "Sclera", def: "The tough, white outer layer that protects the eyeball and maintains its shape." }
     ]
   });
 })();
@@ -2131,7 +2140,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     "teas-science": ["Cellular Biology"].concat(ANATOMY_SYS)
   };
   // 3D model id -> the system whose diagrams to show beneath it.
-  var TOPIC_SYS = { heart: "Cardiovascular", skeleton: "Musculoskeletal", skull: "Musculoskeletal", lungs: "Respiratory", brain: "Nervous", cell: "Cellular Biology", kidney: "Urinary", dna: "Cellular Biology", "upper-limb": "Musculoskeletal", "lower-limb": "Musculoskeletal", hand: "Musculoskeletal" };
+  var TOPIC_SYS = { heart: "Cardiovascular", skeleton: "Musculoskeletal", skull: "Musculoskeletal", lungs: "Respiratory", brain: "Nervous", eye: "Nervous", cell: "Cellular Biology", kidney: "Urinary", dna: "Cellular Biology", "upper-limb": "Musculoskeletal", "lower-limb": "Musculoskeletal", hand: "Musculoskeletal" };
 
   var _idx = null;
   function index() {
@@ -3038,6 +3047,15 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         { size: 170, x: 0, y: -20, z: 0, color: COL.pink, label: "Cerebrum", desc: "Thinking, senses, voluntary movement." },
         { size: 70, x: 0, y: 70, z: -30, color: COL.purp, label: "Cerebellum", desc: "Balance and coordination." },
         { box: true, r: 10, size: 28, h: 70, x: 0, y: 90, z: 0, color: COL.teal, label: "Brainstem", desc: "Controls breathing, heart rate (vital functions)." }
+      ];
+    },
+    eye: function () {
+      return [
+        { size: 170, x: 0, y: 0, z: 0, color: "radial-gradient(circle at 35% 30%, #ffffff, #e6e4d8)", label: "Sclera", desc: "Tough white outer layer that protects and shapes the eye." },
+        { size: 74, x: 0, y: 0, z: 66, color: COL.blue, label: "Iris", desc: "Colored muscle that controls how much light enters." },
+        { size: 30, x: 0, y: 0, z: 84, color: "#141414", label: "Pupil", desc: "The opening that lets light into the eye." },
+        { size: 64, x: 0, y: 0, z: -55, color: COL.red, label: "Retina", desc: "Light-sensitive layer at the back — holds rods and cones." },
+        { box: true, r: 20, size: 34, h: 70, x: 0, y: 30, z: -95, color: COL.pink, label: "Optic nerve", desc: "Carries visual signals from the retina to the brain." }
       ];
     },
     kidney: function () {

@@ -47,9 +47,22 @@ Bundled models live in `models/`:
 | Upper Limb                 | `upper-limb.glb`        |
 | Lower Limb                 | `lower-limb.glb`        |
 | Hand                       | `hand.glb`              |
+| Brain                      | `brain.glb`             |
+| DNA                        | `dna.glb`               |
+| Eye                        | `eye.glb`               |
+| Animal Cell                | `cell.glb`              |
 
 To add a model: drop `models/<name>.glb`, then add a topic to `D.topics` in
 `index.html` with `model: "<name>.glb", glb: true`.
+
+### Model credits & licenses
+
+- `brain.glb`, `dna.glb` — from the **Ethereal / IR Engine Open Asset Kit (Basic)**
+  education set ([ir-engine/ir-engine-assets-basic](https://github.com/ir-engine/ir-engine-assets-basic)),
+  released under Creative Commons.
+- `eye.glb`, `cell.glb` — **original models** generated from geometric primitives with
+  `tools/gen_models.py` (trimesh); no third-party rights.
+- The remaining limb/skeleton/hand models are the project's existing bundled assets.
 
 ## Project layout
 
