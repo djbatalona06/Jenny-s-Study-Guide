@@ -760,6 +760,24 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   .tabbar__btn { transition: color .18s; }
   .tabbar__btn[aria-current="page"] .tabbar__icon { animation: tabPop .3s cubic-bezier(.2,1.4,.3,1) both; }
   @keyframes tabPop { 0%{ transform:translateY(0) scale(1); } 50%{ transform:translateY(-5px) scale(1.18); } 100%{ transform:translateY(-3px) scale(1.12); } }
+
+  /* ---------- economy: floating "+N coin" fx (MA.economy, Task 1) ---------- */
+  .coin-fx {
+    position: fixed; left: 0; top: 0; z-index: 200;
+    pointer-events: none; white-space: nowrap;
+    font-weight: 800; font-size: var(--fs-lg); color: var(--success);
+    text-shadow: 0 2px 10px color-mix(in srgb, var(--success) 45%, transparent);
+    animation: coinFloat .9s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  @keyframes coinFloat {
+    0%   { opacity: 0; transform: translate(-50%, -50%) translateY(6px) scale(.85); }
+    16%  { opacity: 1; transform: translate(-50%, -50%) translateY(-4px) scale(1.05); }
+    70%  { opacity: 1; transform: translate(-50%, -50%) translateY(-34px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) translateY(-54px) scale(.95); }
+  }
+  /* later tasks: give a wallet-balance element class="wallet-amount" to get this bump for free */
+  .wallet-amount--bump { animation: walletBump .4s ease; }
+  @keyframes walletBump { 0% { transform: scale(1); } 40% { transform: scale(1.2); } 100% { transform: scale(1); } }
   </style>
 
   <script>
@@ -1674,8 +1692,8 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   window.MA = window.MA || {};
 
   var DB_NAME = "ma-study";
-  var DB_VER = 1;
-  var STORES = ["kv", "notes", "folders", "events"]; // object stores
+  var DB_VER = 2;
+  var STORES = ["kv", "notes", "folders", "events", "owned"]; // object stores
   var dbp = null;
 
   function open() {
@@ -1844,6 +1862,161 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
 
   MA.util = { el: el, esc: esc, uid: uid, fmtDate: fmtDate, daysUntil: daysUntil, isoWeek: isoWeek, weekKey: weekKey, shuffle: shuffle, mdToHtml: mdToHtml, download: download };
+})();
+
+</script>
+<script>
+/* ---- js/modules/economy.js ---- */
+/* economy.js — Study Coins wallet: streak/character multiplier, earn/spend/grant,
+   and the floating "+N coin" fx. This is the foundation every other gamified-economy
+   module (characters, daily login, shop, quiz/flashcard/anatomy hooks) calls into.
+   It only reads kv (via MA.store) and listens for ma:character / ma:login — it never
+   references MA.characters or MA.daily, which don't exist yet. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var LADDER = [1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.5]; // streak day 1..7+ -> multiplier (holds at 3.5 past day 7)
+
+  function streakMult(streak) {
+    streak = streak || 0;
+    if (streak < 1) return 1.0;
+    return LADDER[Math.min(Math.max(streak, 1), 7) - 1];
+  }
+
+  function effectiveMultiplier() {
+    return streakMult(state.streak) * (state.character === "prowler" ? 1.5 : 1);
+  }
+
+  // local (not UTC) calendar date as YYYY-MM-DD — drives the earnedToday daily reset.
+  function todayLocal() {
+    var d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
+  var state = { wallet: 0, lifetime: 0, earnedToday: { date: todayLocal(), amount: 0 }, character: null, streak: 0 };
+
+  // hydrate in-memory cache from kv; ready resolves once state reflects persisted values.
+  var ready = Promise.all([
+    MA.store.getKV("wallet", 0),
+    MA.store.getKV("walletLifetime", 0),
+    MA.store.getKV("earnedToday", null),
+    MA.store.getKV("character", null),
+    MA.store.getKV("login", null)
+  ]).then(function (r) {
+    var today = todayLocal();
+    var et = r[2];
+    state.wallet = r[0] || 0;
+    state.lifetime = r[1] || 0;
+    state.earnedToday = (et && et.date === today) ? et : { date: today, amount: 0 };
+    state.character = r[3] || null;
+    state.streak = (r[4] && r[4].streak) || 0;
+  });
+
+  /* ---------- floating "+N coin" fx ---------- */
+  function reducedMotion() { return window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+  function anchorPoint(anchorEl) {
+    var node = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl : document.querySelector(".wallet-amount");
+    if (!node) node = document.getElementById("appTitle");
+    if (node && node.getBoundingClientRect) {
+      var r = node.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    return { x: window.innerWidth / 2, y: 70 };
+  }
+
+  // bump any wallet-balance display already on screen (Home/Shop wire this up later).
+  function bumpWalletDisplays() {
+    var nodes = document.querySelectorAll(".wallet-amount");
+    for (var i = 0; i < nodes.length; i++) {
+      (function (n) {
+        n.classList.remove("wallet-amount--bump");
+        void n.offsetWidth; // restart the CSS animation
+        n.classList.add("wallet-amount--bump");
+      })(nodes[i]);
+    }
+  }
+
+  function showCoinFx(amount, anchorEl) {
+    var text = (amount >= 0 ? "+" : "") + amount + " 🪙";
+    bumpWalletDisplays();
+    if (reducedMotion()) { if (MA.app && MA.app.toast) MA.app.toast(text); return; }
+    var pt = anchorPoint(anchorEl);
+    var chip = el("div", { class: "coin-fx", "aria-hidden": "true", style: "left:" + pt.x.toFixed(0) + "px;top:" + pt.y.toFixed(0) + "px;" }, text);
+    document.body.appendChild(chip);
+    setTimeout(function () { if (chip.parentNode) chip.parentNode.removeChild(chip); }, 950);
+  }
+
+  /* ---------- events ---------- */
+  function dispatchCoins(earned) {
+    var detail = { balance: state.wallet, lifetime: state.lifetime, earnedToday: state.earnedToday.amount };
+    if (earned !== undefined) detail.earned = earned;
+    window.dispatchEvent(new CustomEvent("ma:coins", { detail: detail }));
+  }
+
+  window.addEventListener("ma:character", function (e) {
+    state.character = (e.detail && e.detail.character) || null;
+  });
+  window.addEventListener("ma:login", function (e) {
+    if (e.detail && typeof e.detail.streak === "number") state.streak = e.detail.streak;
+  });
+
+  /* ---------- public API ---------- */
+  function earnCoins(baseAmount, source, anchorEl) {
+    var earned = Math.round(baseAmount * effectiveMultiplier());
+    state.wallet += earned;
+    state.lifetime += earned;
+    var today = todayLocal();
+    if (state.earnedToday.date !== today) state.earnedToday = { date: today, amount: 0 };
+    state.earnedToday.amount += earned;
+
+    // fire-and-forget, but chained so the three writes land in order
+    MA.store.setKV("wallet", state.wallet)
+      .then(function () { return MA.store.setKV("walletLifetime", state.lifetime); })
+      .then(function () { return MA.store.setKV("earnedToday", state.earnedToday); });
+
+    showCoinFx(earned, anchorEl);
+    dispatchCoins(earned);
+    return earned;
+  }
+
+  function spend(amount) {
+    amount = Math.round(amount) || 0;
+    if (state.wallet < amount) return Promise.resolve(false);
+    state.wallet -= amount;
+    return MA.store.setKV("wallet", state.wallet).then(function () {
+      dispatchCoins();
+      return true;
+    });
+  }
+
+  // Direct, unmultiplied credit (welcome bonus, daily-login payout) — bypasses the
+  // streak/character multiplier in earnCoins on purpose. Does not touch earnedToday.
+  function grant(n) {
+    n = Math.round(n) || 0;
+    state.wallet += n;
+    state.lifetime += n;
+    MA.store.setKV("wallet", state.wallet).then(function () { return MA.store.setKV("walletLifetime", state.lifetime); });
+    dispatchCoins(n);
+    return n;
+  }
+
+  function getWallet() { return state.wallet; }
+  function getLifetime() { return state.lifetime; }
+  function getEarnedToday() { return state.earnedToday.amount; }
+
+  MA.economy = {
+    streakMult: streakMult,
+    effectiveMultiplier: effectiveMultiplier,
+    earnCoins: earnCoins,
+    spend: spend,
+    grant: grant,
+    getWallet: getWallet,
+    getLifetime: getLifetime,
+    getEarnedToday: getEarnedToday,
+    ready: ready
+  };
 })();
 
 </script>
