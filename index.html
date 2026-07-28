@@ -2020,6 +2020,167 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
 })();
 
 </script>
+<style>
+  /* ---------- characters: first-launch / re-select chooser modal ---------- */
+  .char-modal {
+    position: fixed; inset: 0; z-index: 9400; background: rgba(0,0,0,.72);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
+  .char-modal__card {
+    position: relative; width: 100%; max-width: 480px; max-height: 92vh; overflow: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); padding: 22px;
+  }
+  .char-modal__close {
+    position: absolute; top: 10px; right: 10px; width: 36px; height: 36px;
+    border: none; background: transparent; color: var(--muted-fg); font-size: 18px;
+    cursor: pointer; border-radius: var(--r-full);
+  }
+  .char-modal__close:hover { background: var(--muted); }
+  .char-modal__title { font-size: var(--fs-lg); font-weight: 800; margin: 0 0 4px; }
+  .char-modal__sub { color: var(--muted-fg); font-size: var(--fs-sm); margin: 0; }
+  .char-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  @media (max-width: 360px) { .char-grid { grid-template-columns: 1fr; } }
+  .char-card {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+    padding: 14px 10px; border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--card);
+  }
+  .char-card--active { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+  .char-card__emoji { font-size: 34px; line-height: 1; }
+  .char-card__name { font-weight: 800; font-size: var(--fs-base); }
+  .char-card__bonus { font-size: var(--fs-xs); color: var(--muted-fg); min-height: 30px; }
+  .char-card .btn { width: 100%; margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) { .char-modal, .char-card { transition: none !important; } }
+</style>
+<script>
+/* ---- js/modules/characters.js ---- */
+/* characters.js — the 4 playable characters (bonuses honored by economy/shop/learn in
+   later tasks), the first-launch selection modal, and Settings re-select. Grants the
+   one-time 500-coin welcome bonus via the unmultiplied MA.economy.grant() — never
+   earnCoins(), which applies the streak/character multiplier. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var LIST = [
+    { id: "diva", emoji: "👑", name: "Diva", bonus: "15% off every shop purchase" },
+    { id: "prowler", emoji: "🐆", name: "Prowler", bonus: "×1.5 coins on all studying" },
+    { id: "expert", emoji: "🧠", name: "Expert", bonus: "×1.5 daily login bonus + 1 free streak freeze/week" },
+    { id: "analyst", emoji: "🔍", name: "Analyst", bonus: "3 Learn hint charges (refills 1 every 5 min)" }
+  ];
+
+  var current = null;
+  // hydrate the sync-readable cache from kv; never rejects (kv unavailable -> no character).
+  var ready = MA.store.getKV("character", null).then(function (c) {
+    current = c || null;
+  }).catch(function () { current = null; });
+
+  function getCharacter() { return current; }
+  function list() { return LIST.slice(); }
+
+  /* ---------- select / welcome grant ---------- */
+  function select(id) {
+    var wasFirstRun = false;
+    return MA.store.getKV("firstRunDone", false).then(function (done) {
+      wasFirstRun = !done;
+      current = id;
+      return MA.store.setKV("character", id);
+    }).then(function () {
+      window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
+      if (!wasFirstRun) return null;
+      // gate the first economy mutation on hydration finishing (see cross-task notes) —
+      // an early grant can otherwise be clobbered by economy's kv hydration.
+      return MA.economy.ready.then(function () {
+        MA.economy.grant(500);
+        return MA.store.setKV("firstRunDone", true);
+      }).then(function () {
+        if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
+        if (MA.app && MA.app.toast) MA.app.toast("Welcome! +500 🪙 to get you started");
+      });
+    }).catch(function () {
+      // kv unavailable — still flip the in-memory character + event so earning/bonuses
+      // keep working; just skip the (unpersistable) welcome grant.
+      current = id;
+      window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
+    }).then(function () { return id; });
+  }
+
+  /* ---------- chooser modal (2x2 grid) ---------- */
+  function openChooser(opts) {
+    opts = opts || {};
+    var firstRun = !!opts.firstRun;
+    var lastFocused = document.activeElement;
+    var titleId = "charModalTitle" + Date.now();
+
+    var overlay = el("div", { class: "char-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId });
+    var card = el("div", { class: "char-modal__card" });
+    overlay.appendChild(card);
+
+    function focusables() {
+      return Array.prototype.slice.call(overlay.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .filter(function (n) { return !n.disabled && n.offsetParent !== null; });
+    }
+    function close() {
+      if (!overlay.parentNode) return;
+      document.removeEventListener("keydown", onKeydown);
+      overlay.parentNode.removeChild(overlay);
+      if (lastFocused && lastFocused.focus) { try { lastFocused.focus(); } catch (e) {} }
+    }
+    function onKeydown(e) {
+      if (e.key === "Escape") { if (!firstRun) close(); return; }
+      if (e.key === "Tab") {
+        var f = focusables();
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+
+    if (!firstRun) {
+      card.appendChild(el("button", { class: "char-modal__close", type: "button", "aria-label": "Close", onclick: close }, "✕"));
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    }
+
+    card.appendChild(el("h3", { id: titleId, class: "char-modal__title", text: firstRun ? "Choose your character" : "Switch character" }));
+    card.appendChild(el("p", { class: "char-modal__sub", text: firstRun
+      ? "Pick who's studying with you — this sets your starting bonus and gives you a 500 🪙 welcome gift."
+      : "Pick a new character any time. Your bonus swaps immediately." }));
+
+    var grid = el("div", { class: "char-grid" });
+    LIST.forEach(function (c) {
+      var active = current === c.id;
+      var chooseBtn = el("button", {
+        class: "btn btn--primary btn--sm", type: "button", "aria-label": "Choose " + c.name
+      }, active ? "Selected ✓" : "Choose");
+      chooseBtn.addEventListener("click", function () { select(c.id).then(function () { close(); }); });
+      grid.appendChild(el("div", { class: "char-card" + (active ? " char-card--active" : "") }, [
+        el("div", { class: "char-card__emoji", "aria-hidden": "true", text: c.emoji }),
+        el("div", { class: "char-card__name", text: c.name }),
+        el("div", { class: "char-card__bonus", text: c.bonus }),
+        chooseBtn
+      ]));
+    });
+    card.appendChild(grid);
+
+    document.addEventListener("keydown", onKeydown);
+    document.body.appendChild(overlay);
+    setTimeout(function () { var f = focusables(); if (f.length) f[0].focus(); }, 30);
+  }
+
+  // On boot: if the welcome flow has never completed, show the required first-launch
+  // chooser. Never blocks anything else — a kv failure just means it stays hidden and
+  // MA.economy's own defaults (character null -> x1) keep earning working.
+  ready.then(function () { return MA.store.getKV("firstRunDone", false); })
+    .then(function (done) { if (!done) openChooser({ firstRun: true }); })
+    .catch(function () {});
+
+  MA.characters = { getCharacter: getCharacter, select: select, list: list, ready: ready, openChooser: openChooser };
+})();
+
+</script>
 <script>
 /* ---- js/modules/flashcards.js ---- */
 /* flashcards.js — Quizlet-style decks with four study modes:
@@ -3365,6 +3526,27 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     // appearance controls
     wrap.appendChild(el("div", { class: "section-title", text: "Appearance" }));
     wrap.appendChild(buildAppearance());
+
+    // character (Task 2: re-selectable any time, no first-run restriction)
+    wrap.appendChild(el("div", { class: "section-title", text: "Character" }));
+    var charCard = el("div", { class: "card stack" });
+    wrap.appendChild(charCard);
+    renderCharCard();
+    function onCharChange() { renderCharCard(); }
+    window.addEventListener("ma:character", onCharChange);
+    MA.app.onLeave(function () { window.removeEventListener("ma:character", onCharChange); });
+    function renderCharCard() {
+      charCard.innerHTML = "";
+      var id = MA.characters ? MA.characters.getCharacter() : null;
+      var def = id && MA.characters ? MA.characters.list().filter(function (c) { return c.id === id; })[0] : null;
+      charCard.appendChild(def
+        ? row(def.emoji + " " + def.name, def.bonus, null)
+        : el("p", { class: "muted", text: "No character selected yet." }));
+      charCard.appendChild(el("button", {
+        class: "btn btn--primary btn--block", style: "margin-top:8px",
+        onclick: function () { if (MA.characters) MA.characters.openChooser({ firstRun: false }); }
+      }, def ? "Switch character" : "Choose a character"));
+    }
 
     // data controls
     wrap.appendChild(el("div", { class: "section-title", text: "Your data" }));
