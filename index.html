@@ -2100,6 +2100,14 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       // kv/economy round trip even starts — already sees the bonus as claimed.
       var wasFirstRun = !firstRunDone;
       if (wasFirstRun) firstRunDone = true;
+      // Tracks whether MA.economy.grant(500) actually ran for THIS call. A failure
+      // anywhere before this flips true (character persist, economy.ready, grant
+      // itself) means no coins were issued, so the claim above must be rolled back —
+      // otherwise a retry would see firstRunDone stuck true and silently skip the
+      // bonus forever. A failure AFTER this flips true (only the firstRunDone persist
+      // rejected) means the credit is real, so the in-memory flag must stay claimed —
+      // rolling it back there would let a retry double-grant.
+      var credited = false;
       current = id;
       return MA.store.setKV("character", id).then(function () {
         window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
@@ -2108,15 +2116,20 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         // an early grant can otherwise be clobbered by economy's kv hydration.
         return MA.economy.ready.then(function () {
           MA.economy.grant(500);
+          credited = true;
           return MA.store.setKV("firstRunDone", true);
         }).then(function () {
           if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
           if (MA.app && MA.app.toast) MA.app.toast("Welcome! +500 🪙 to get you started");
         });
+      }).catch(function (err) {
+        if (wasFirstRun && !credited) firstRunDone = false;
+        throw err;
       });
     }).catch(function () {
-      // kv unavailable — still flip the in-memory character + event so earning/bonuses
-      // keep working; just skip the (unpersistable) welcome grant.
+      // kv unavailable, or a failure above that already rolled back the in-memory
+      // claim when no credit was issued — still flip the in-memory character + event
+      // so earning/bonuses keep working; just skip the (unpersistable) welcome grant.
       current = id;
       window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
     }).then(function () { return id; });
