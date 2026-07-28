@@ -2072,32 +2072,47 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   ];
 
   var current = null;
-  // hydrate the sync-readable cache from kv; never rejects (kv unavailable -> no character).
-  var ready = MA.store.getKV("character", null).then(function (c) {
-    current = c || null;
-  }).catch(function () { current = null; });
+  // in-memory cache of kv firstRunDone, hydrated once below. This is the source of
+  // truth select() claims synchronously against (see there) — reading kv fresh on
+  // every select() call would leave a check-then-act window where two overlapping
+  // select() calls (double-click, or two cards clicked before the first settles)
+  // both observe "not done yet" and both grant the welcome bonus.
+  var firstRunDone = false;
+  // hydrate the sync-readable caches from kv; never rejects (kv unavailable -> no
+  // character, firstRunDone stays false so a later select() still works standalone).
+  var ready = Promise.all([
+    MA.store.getKV("character", null),
+    MA.store.getKV("firstRunDone", false)
+  ]).then(function (r) {
+    current = r[0] || null;
+    firstRunDone = !!r[1];
+  }).catch(function () { current = null; firstRunDone = false; });
 
   function getCharacter() { return current; }
   function list() { return LIST.slice(); }
 
   /* ---------- select / welcome grant ---------- */
   function select(id) {
-    var wasFirstRun = false;
-    return MA.store.getKV("firstRunDone", false).then(function (done) {
-      wasFirstRun = !done;
+    return ready.then(function () {
+      // Synchronous check-and-set on the in-memory flag (no `await` between the read
+      // and the write): whichever call reaches this line first flips firstRunDone to
+      // true immediately, so any other overlapping select() call — before its own
+      // kv/economy round trip even starts — already sees the bonus as claimed.
+      var wasFirstRun = !firstRunDone;
+      if (wasFirstRun) firstRunDone = true;
       current = id;
-      return MA.store.setKV("character", id);
-    }).then(function () {
-      window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
-      if (!wasFirstRun) return null;
-      // gate the first economy mutation on hydration finishing (see cross-task notes) —
-      // an early grant can otherwise be clobbered by economy's kv hydration.
-      return MA.economy.ready.then(function () {
-        MA.economy.grant(500);
-        return MA.store.setKV("firstRunDone", true);
-      }).then(function () {
-        if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
-        if (MA.app && MA.app.toast) MA.app.toast("Welcome! +500 🪙 to get you started");
+      return MA.store.setKV("character", id).then(function () {
+        window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
+        if (!wasFirstRun) return null;
+        // gate the first economy mutation on hydration finishing (see cross-task notes) —
+        // an early grant can otherwise be clobbered by economy's kv hydration.
+        return MA.economy.ready.then(function () {
+          MA.economy.grant(500);
+          return MA.store.setKV("firstRunDone", true);
+        }).then(function () {
+          if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
+          if (MA.app && MA.app.toast) MA.app.toast("Welcome! +500 🪙 to get you started");
+        });
       });
     }).catch(function () {
       // kv unavailable — still flip the in-memory character + event so earning/bonuses
