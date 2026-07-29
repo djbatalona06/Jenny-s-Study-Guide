@@ -760,6 +760,24 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   .tabbar__btn { transition: color .18s; }
   .tabbar__btn[aria-current="page"] .tabbar__icon { animation: tabPop .3s cubic-bezier(.2,1.4,.3,1) both; }
   @keyframes tabPop { 0%{ transform:translateY(0) scale(1); } 50%{ transform:translateY(-5px) scale(1.18); } 100%{ transform:translateY(-3px) scale(1.12); } }
+
+  /* ---------- economy: floating "+N coin" fx (MA.economy, Task 1) ---------- */
+  .coin-fx {
+    position: fixed; left: 0; top: 0; z-index: 200;
+    pointer-events: none; white-space: nowrap;
+    font-weight: 800; font-size: var(--fs-lg); color: var(--success);
+    text-shadow: 0 2px 10px color-mix(in srgb, var(--success) 45%, transparent);
+    animation: coinFloat .9s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  @keyframes coinFloat {
+    0%   { opacity: 0; transform: translate(-50%, -50%) translateY(6px) scale(.85); }
+    16%  { opacity: 1; transform: translate(-50%, -50%) translateY(-4px) scale(1.05); }
+    70%  { opacity: 1; transform: translate(-50%, -50%) translateY(-34px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) translateY(-54px) scale(.95); }
+  }
+  /* later tasks: give a wallet-balance element class="wallet-amount" to get this bump for free */
+  .wallet-amount--bump { animation: walletBump .4s ease; }
+  @keyframes walletBump { 0% { transform: scale(1); } 40% { transform: scale(1.2); } 100% { transform: scale(1); } }
   </style>
 
   <script>
@@ -1674,8 +1692,8 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   window.MA = window.MA || {};
 
   var DB_NAME = "ma-study";
-  var DB_VER = 1;
-  var STORES = ["kv", "notes", "folders", "events"]; // object stores
+  var DB_VER = 2;
+  var STORES = ["kv", "notes", "folders", "events", "owned"]; // object stores
   var dbp = null;
 
   function open() {
@@ -1844,6 +1862,604 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
 
   MA.util = { el: el, esc: esc, uid: uid, fmtDate: fmtDate, daysUntil: daysUntil, isoWeek: isoWeek, weekKey: weekKey, shuffle: shuffle, mdToHtml: mdToHtml, download: download };
+})();
+
+</script>
+<script>
+/* ---- js/modules/economy.js ---- */
+/* economy.js — Study Coins wallet: streak/character multiplier, earn/spend/grant,
+   and the floating "+N coin" fx. This is the foundation every other gamified-economy
+   module (characters, daily login, shop, quiz/flashcard/anatomy hooks) calls into.
+   It only reads kv (via MA.store) and listens for ma:character / ma:login — it never
+   references MA.characters or MA.daily, which don't exist yet. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var LADDER = [1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.5]; // streak day 1..7+ -> multiplier (holds at 3.5 past day 7)
+
+  function streakMult(streak) {
+    streak = streak || 0;
+    if (streak < 1) return 1.0;
+    return LADDER[Math.min(Math.max(streak, 1), 7) - 1];
+  }
+
+  function effectiveMultiplier() {
+    return streakMult(state.streak) * (state.character === "prowler" ? 1.5 : 1);
+  }
+
+  // local (not UTC) calendar date as YYYY-MM-DD — drives the earnedToday daily reset.
+  function todayLocal() {
+    var d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+
+  var state = { wallet: 0, lifetime: 0, earnedToday: { date: todayLocal(), amount: 0 }, character: null, streak: 0 };
+
+  // hydrate in-memory cache from kv; ready resolves once state reflects persisted values.
+  var ready = Promise.all([
+    MA.store.getKV("wallet", 0),
+    MA.store.getKV("walletLifetime", 0),
+    MA.store.getKV("earnedToday", null),
+    MA.store.getKV("character", null),
+    MA.store.getKV("login", null)
+  ]).then(function (r) {
+    var today = todayLocal();
+    var et = r[2];
+    state.wallet = r[0] || 0;
+    state.lifetime = r[1] || 0;
+    state.earnedToday = (et && et.date === today) ? et : { date: today, amount: 0 };
+    state.character = r[3] || null;
+    state.streak = (r[4] && r[4].streak) || 0;
+  });
+
+  /* ---------- floating "+N coin" fx ---------- */
+  function reducedMotion() { return window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+  function anchorPoint(anchorEl) {
+    var node = (anchorEl && anchorEl.getBoundingClientRect) ? anchorEl : document.querySelector(".wallet-amount");
+    if (!node) node = document.getElementById("appTitle");
+    if (node && node.getBoundingClientRect) {
+      var r = node.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    return { x: window.innerWidth / 2, y: 70 };
+  }
+
+  // bump any wallet-balance display already on screen (Home/Shop wire this up later).
+  function bumpWalletDisplays() {
+    var nodes = document.querySelectorAll(".wallet-amount");
+    for (var i = 0; i < nodes.length; i++) {
+      (function (n) {
+        n.classList.remove("wallet-amount--bump");
+        void n.offsetWidth; // restart the CSS animation
+        n.classList.add("wallet-amount--bump");
+      })(nodes[i]);
+    }
+  }
+
+  function showCoinFx(amount, anchorEl) {
+    var text = (amount >= 0 ? "+" : "") + amount + " 🪙";
+    bumpWalletDisplays();
+    if (reducedMotion()) { if (MA.app && MA.app.toast) MA.app.toast(text); return; }
+    var pt = anchorPoint(anchorEl);
+    var chip = el("div", { class: "coin-fx", "aria-hidden": "true", style: "left:" + pt.x.toFixed(0) + "px;top:" + pt.y.toFixed(0) + "px;" }, text);
+    document.body.appendChild(chip);
+    setTimeout(function () { if (chip.parentNode) chip.parentNode.removeChild(chip); }, 950);
+  }
+
+  /* ---------- events ---------- */
+  function dispatchCoins(earned) {
+    var detail = { balance: state.wallet, lifetime: state.lifetime, earnedToday: state.earnedToday.amount };
+    if (earned !== undefined) detail.earned = earned;
+    window.dispatchEvent(new CustomEvent("ma:coins", { detail: detail }));
+  }
+
+  window.addEventListener("ma:character", function (e) {
+    state.character = (e.detail && e.detail.character) || null;
+  });
+  window.addEventListener("ma:login", function (e) {
+    if (e.detail && typeof e.detail.streak === "number") state.streak = e.detail.streak;
+  });
+
+  /* ---------- public API ---------- */
+  function earnCoins(baseAmount, source, anchorEl) {
+    var earned = Math.round(baseAmount * effectiveMultiplier());
+    state.wallet += earned;
+    state.lifetime += earned;
+    var today = todayLocal();
+    if (state.earnedToday.date !== today) state.earnedToday = { date: today, amount: 0 };
+    state.earnedToday.amount += earned;
+
+    // fire-and-forget, but chained so the three writes land in order
+    MA.store.setKV("wallet", state.wallet)
+      .then(function () { return MA.store.setKV("walletLifetime", state.lifetime); })
+      .then(function () { return MA.store.setKV("earnedToday", state.earnedToday); });
+
+    showCoinFx(earned, anchorEl);
+    dispatchCoins(earned);
+    return earned;
+  }
+
+  function spend(amount) {
+    amount = Math.round(amount) || 0;
+    if (state.wallet < amount) return Promise.resolve(false);
+    state.wallet -= amount;
+    return MA.store.setKV("wallet", state.wallet).then(function () {
+      dispatchCoins();
+      return true;
+    });
+  }
+
+  // Direct, unmultiplied credit (welcome bonus, daily-login payout) — bypasses the
+  // streak/character multiplier in earnCoins on purpose. Does not touch earnedToday.
+  function grant(n) {
+    n = Math.round(n) || 0;
+    state.wallet += n;
+    state.lifetime += n;
+    MA.store.setKV("wallet", state.wallet).then(function () { return MA.store.setKV("walletLifetime", state.lifetime); });
+    dispatchCoins(n);
+    return n;
+  }
+
+  function getWallet() { return state.wallet; }
+  function getLifetime() { return state.lifetime; }
+  function getEarnedToday() { return state.earnedToday.amount; }
+
+  MA.economy = {
+    streakMult: streakMult,
+    effectiveMultiplier: effectiveMultiplier,
+    earnCoins: earnCoins,
+    spend: spend,
+    grant: grant,
+    getWallet: getWallet,
+    getLifetime: getLifetime,
+    getEarnedToday: getEarnedToday,
+    ready: ready
+  };
+})();
+
+</script>
+<style>
+  /* ---------- characters: first-launch / re-select chooser modal ---------- */
+  .char-modal {
+    position: fixed; inset: 0; z-index: 9400; background: rgba(0,0,0,.72);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
+  .char-modal__card {
+    position: relative; width: 100%; max-width: 480px; max-height: 92vh; overflow: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); padding: 22px;
+  }
+  .char-modal__close {
+    position: absolute; top: 10px; right: 10px; width: 36px; height: 36px;
+    border: none; background: transparent; color: var(--muted-fg); font-size: 18px;
+    cursor: pointer; border-radius: var(--r-full);
+  }
+  .char-modal__close:hover { background: var(--muted); }
+  .char-modal__title { font-size: var(--fs-lg); font-weight: 800; margin: 0 0 4px; }
+  .char-modal__sub { color: var(--muted-fg); font-size: var(--fs-sm); margin: 0; }
+  .char-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  @media (max-width: 360px) { .char-grid { grid-template-columns: 1fr; } }
+  .char-card {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+    padding: 14px 10px; border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--card);
+  }
+  .char-card--active { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+  .char-card__emoji { font-size: 34px; line-height: 1; }
+  .char-card__name { font-weight: 800; font-size: var(--fs-base); }
+  .char-card__bonus { font-size: var(--fs-xs); color: var(--muted-fg); min-height: 30px; }
+  .char-card .btn { width: 100%; margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) { .char-modal, .char-card { transition: none !important; } }
+</style>
+<script>
+/* ---- js/modules/characters.js ---- */
+/* characters.js — the 4 playable characters (bonuses honored by economy/shop/learn in
+   later tasks), the first-launch selection modal, and Settings re-select. Grants the
+   one-time 500-coin welcome bonus via the unmultiplied MA.economy.grant() — never
+   earnCoins(), which applies the streak/character multiplier. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var LIST = [
+    { id: "diva", emoji: "👑", name: "Diva", bonus: "15% off every shop purchase" },
+    { id: "prowler", emoji: "🐆", name: "Prowler", bonus: "×1.5 coins on all studying" },
+    { id: "expert", emoji: "🧠", name: "Expert", bonus: "×1.5 daily login bonus + 1 free streak freeze/week" },
+    { id: "analyst", emoji: "🔍", name: "Analyst", bonus: "3 Learn hint charges (refills 1 every 5 min)" }
+  ];
+
+  var current = null;
+  // in-memory cache of kv firstRunDone, hydrated once below. This is the source of
+  // truth select() claims synchronously against (see there) — reading kv fresh on
+  // every select() call would leave a check-then-act window where two overlapping
+  // select() calls (double-click, or two cards clicked before the first settles)
+  // both observe "not done yet" and both grant the welcome bonus.
+  var firstRunDone = false;
+  // hydrate the sync-readable caches from kv; never rejects (kv unavailable -> no
+  // character, firstRunDone stays false so a later select() still works standalone).
+  var ready = Promise.all([
+    MA.store.getKV("character", null),
+    MA.store.getKV("firstRunDone", false)
+  ]).then(function (r) {
+    current = r[0] || null;
+    firstRunDone = !!r[1];
+  }).catch(function () { current = null; firstRunDone = false; });
+
+  function getCharacter() { return current; }
+  function list() { return LIST.slice(); }
+
+  /* ---------- select / welcome grant ---------- */
+  function select(id) {
+    return ready.then(function () {
+      // Synchronous check-and-set on the in-memory flag (no `await` between the read
+      // and the write): whichever call reaches this line first flips firstRunDone to
+      // true immediately, so any other overlapping select() call — before its own
+      // kv/economy round trip even starts — already sees the bonus as claimed.
+      var wasFirstRun = !firstRunDone;
+      if (wasFirstRun) firstRunDone = true;
+      // Tracks whether MA.economy.grant(500) actually ran for THIS call. A failure
+      // anywhere before this flips true (character persist, economy.ready, grant
+      // itself) means no coins were issued, so the claim above must be rolled back —
+      // otherwise a retry would see firstRunDone stuck true and silently skip the
+      // bonus forever. A failure AFTER this flips true (only the firstRunDone persist
+      // rejected) means the credit is real, so the in-memory flag must stay claimed —
+      // rolling it back there would let a retry double-grant.
+      var credited = false;
+      current = id;
+      return MA.store.setKV("character", id).then(function () {
+        window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
+        if (!wasFirstRun) return null;
+        // gate the first economy mutation on hydration finishing (see cross-task notes) —
+        // an early grant can otherwise be clobbered by economy's kv hydration.
+        return MA.economy.ready.then(function () {
+          MA.economy.grant(500);
+          credited = true;
+          return MA.store.setKV("firstRunDone", true);
+        }).then(function () {
+          if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
+          if (MA.app && MA.app.toast) MA.app.toast("Welcome! +500 🪙 to get you started");
+        });
+      }).catch(function (err) {
+        if (wasFirstRun && !credited) firstRunDone = false;
+        throw err;
+      });
+    }).catch(function () {
+      // kv unavailable, or a failure above that already rolled back the in-memory
+      // claim when no credit was issued — still flip the in-memory character + event
+      // so earning/bonuses keep working; just skip the (unpersistable) welcome grant.
+      current = id;
+      window.dispatchEvent(new CustomEvent("ma:character", { detail: { character: id } }));
+    }).then(function () { return id; });
+  }
+
+  /* ---------- chooser modal (2x2 grid) ---------- */
+  function openChooser(opts) {
+    opts = opts || {};
+    var firstRun = !!opts.firstRun;
+    var lastFocused = document.activeElement;
+    var titleId = "charModalTitle" + Date.now();
+
+    var overlay = el("div", { class: "char-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId });
+    var card = el("div", { class: "char-modal__card" });
+    overlay.appendChild(card);
+
+    function focusables() {
+      return Array.prototype.slice.call(overlay.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .filter(function (n) { return !n.disabled && n.offsetParent !== null; });
+    }
+    function close() {
+      if (!overlay.parentNode) return;
+      document.removeEventListener("keydown", onKeydown);
+      overlay.parentNode.removeChild(overlay);
+      if (lastFocused && lastFocused.focus) { try { lastFocused.focus(); } catch (e) {} }
+    }
+    function onKeydown(e) {
+      if (e.key === "Escape") { if (!firstRun) close(); return; }
+      if (e.key === "Tab") {
+        var f = focusables();
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+
+    if (!firstRun) {
+      card.appendChild(el("button", { class: "char-modal__close", type: "button", "aria-label": "Close", onclick: close }, "✕"));
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    }
+
+    card.appendChild(el("h3", { id: titleId, class: "char-modal__title", text: firstRun ? "Choose your character" : "Switch character" }));
+    card.appendChild(el("p", { class: "char-modal__sub", text: firstRun
+      ? "Pick who's studying with you — this sets your starting bonus and gives you a 500 🪙 welcome gift."
+      : "Pick a new character any time. Your bonus swaps immediately." }));
+
+    var grid = el("div", { class: "char-grid" });
+    LIST.forEach(function (c) {
+      var active = current === c.id;
+      var chooseBtn = el("button", {
+        class: "btn btn--primary btn--sm", type: "button", "aria-label": "Choose " + c.name
+      }, active ? "Selected ✓" : "Choose");
+      chooseBtn.addEventListener("click", function () { select(c.id).then(function () { close(); }); });
+      grid.appendChild(el("div", { class: "char-card" + (active ? " char-card--active" : "") }, [
+        el("div", { class: "char-card__emoji", "aria-hidden": "true", text: c.emoji }),
+        el("div", { class: "char-card__name", text: c.name }),
+        el("div", { class: "char-card__bonus", text: c.bonus }),
+        chooseBtn
+      ]));
+    });
+    card.appendChild(grid);
+
+    document.addEventListener("keydown", onKeydown);
+    document.body.appendChild(overlay);
+    setTimeout(function () { var f = focusables(); if (f.length) f[0].focus(); }, 30);
+  }
+
+  // On boot: if the welcome flow has never completed, show the required first-launch
+  // chooser. Never blocks anything else — a kv failure just means it stays hidden and
+  // MA.economy's own defaults (character null -> x1) keep earning working.
+  ready.then(function () { return MA.store.getKV("firstRunDone", false); })
+    .then(function (done) { if (!done) openChooser({ firstRun: true }); })
+    .catch(function () {});
+
+  MA.characters = { getCharacter: getCharacter, select: select, list: list, ready: ready, openChooser: openChooser };
+})();
+
+</script>
+<style>
+  /* ---------- daily login streak: popup + Home widget ---------- */
+  .daily-modal {
+    position: fixed; inset: 0; z-index: 9350; background: rgba(0,0,0,.72);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
+  .daily-modal__card {
+    position: relative; width: 100%; max-width: 380px; max-height: 92vh; overflow: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); padding: 26px 22px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .daily-modal__emoji { font-size: 44px; line-height: 1; }
+  .daily-modal__title { font-size: var(--fs-lg); font-weight: 800; margin: 2px 0 0; }
+  .daily-modal__bar {
+    width: 100%; height: 10px; border-radius: var(--r-full); background: var(--muted, var(--border));
+    overflow: hidden; margin: 4px 0;
+  }
+  .daily-modal__bar-fill {
+    height: 100%; border-radius: var(--r-full); background: linear-gradient(90deg, var(--primary), var(--success));
+  }
+  .daily-modal__mult { font-size: var(--fs-sm); color: var(--muted-fg); font-weight: 700; }
+  .daily-modal__bonus { font-size: var(--fs-lg); font-weight: 800; color: var(--success); }
+  .daily-modal .btn { width: 100%; margin-top: 6px; }
+  .daily-widget {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    border-radius: var(--r-full); border: 1px solid var(--border); background: var(--card);
+    font-weight: 800; font-size: var(--fs-sm);
+  }
+  .daily-widget__mult { color: var(--muted-fg); font-weight: 700; }
+  @media (prefers-reduced-motion: reduce) { .daily-modal, .daily-modal__card { transition: none !important; animation: none !important; } }
+</style>
+<script>
+/* ---- js/modules/daily.js ---- */
+/* daily.js — consecutive-day login streak: computes the streak from lastClaimDate vs
+   today's local date, shows a "Day X of 7" popup with a Claim button, and awards the
+   bonus via the unmultiplied MA.economy.grant() (this flow already applies its own
+   ladder/Expert math, so it must never go through earnCoins, which would multiply it
+   again). Dispatches ma:login so economy's cached streak/effectiveMultiplier() stays
+   correct. Reads MA.characters.getCharacter() for the Expert bonus/freeze if the
+   module is present; otherwise treats it as no bonus. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  // local (not UTC) calendar date as YYYY-MM-DD, matching economy.js's todayLocal().
+  function todayLocal() {
+    var d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  // whole-day difference (b - a) between two YYYY-MM-DD strings, treated as UTC
+  // midnights so DST transitions never shift the count.
+  function daysBetween(a, b) {
+    return Math.round((new Date(b + "T00:00:00Z").getTime() - new Date(a + "T00:00:00Z").getTime()) / 86400000);
+  }
+  function getCharacter() {
+    return (MA.characters && MA.characters.getCharacter) ? MA.characters.getCharacter() : null;
+  }
+
+  // in-memory cache of kv `login`, hydrated once below. computeStreakInfo() and claim()
+  // both read/mutate this directly (never re-read kv mid-flow) — see the claim() guard.
+  var login = null;
+  var ready = MA.store.getKV("login", null).then(function (v) { login = v || null; })
+    .catch(function () { login = null; });
+
+  // Pure projection of {in-memory login, today, character} -> what the popup/widget
+  // should show. Never mutates `login` or kv — only claim() does that.
+  function computeStreakInfo() {
+    var today = todayLocal();
+    var character = getCharacter();
+    var streak, claimedToday, freezeUsed = false, freezeWeek = login ? (login.freezeWeek || null) : null;
+
+    if (!login) {
+      streak = 1; claimedToday = false;
+    } else if (login.lastClaimDate === today) {
+      streak = login.streak || 1; claimedToday = true;
+    } else {
+      claimedToday = false;
+      var diff = daysBetween(login.lastClaimDate, today);
+      var thisWeek = U.weekKey(new Date());
+      if (diff === 1) {
+        streak = (login.streak || 0) + 1;
+      } else if (diff === 2 && character === "expert" && login.freezeWeek !== thisWeek) {
+        // Expert freeze: exactly one missed day, freeze not yet used this ISO week.
+        streak = (login.streak || 0) + 1;
+        freezeUsed = true;
+        freezeWeek = thisWeek;
+      } else {
+        streak = 1; // gap > 1 missed day, or freeze already used this week, or clock skew
+      }
+    }
+
+    var cyclePos = ((streak - 1) % 7) + 1;
+    var mult = MA.economy.streakMult(streak);
+    var bonus = Math.round(25 * mult * (character === "expert" ? 1.5 : 1)) + (streak % 7 === 0 ? 300 : 0);
+    return {
+      streak: streak, claimedToday: claimedToday, bonus: bonus, cyclePos: cyclePos,
+      multiplier: mult, freezeUsed: freezeUsed, freezeWeek: freezeWeek
+    };
+  }
+
+  function getStreakInfo() { return computeStreakInfo(); }
+
+  /* ---------- claim (pay-exactly-once-per-day) ---------- */
+  // See _shared-context.md cross-task notes / MA.characters.select for why this shape:
+  // the claimed-today check-and-set on the in-memory `login` happens synchronously,
+  // with no await/.then between the read and the write, so two overlapping claim()
+  // calls (double-click, or two triggers before the first settles) can't both win.
+  function claim() {
+    return ready.then(function () {
+      var today = todayLocal();
+      if (login && login.lastClaimDate === today) {
+        return { claimed: false, alreadyClaimed: true, streak: login.streak || 1 };
+      }
+      var info = computeStreakInfo();
+      var newLogin = { streak: info.streak, lastClaimDate: today, freezeWeek: info.freezeWeek || null };
+      var prevLogin = login;
+      login = newLogin; // <-- synchronous claim of today's slot, before any await below
+      var credited = false;
+      var bonus = info.bonus, streak = info.streak;
+
+      return MA.economy.ready.then(function () {
+        MA.economy.grant(bonus);
+        credited = true;
+        return MA.store.setKV("login", newLogin);
+      }).then(function () {
+        window.dispatchEvent(new CustomEvent("ma:login", { detail: { streak: streak, multiplier: MA.economy.streakMult(streak) } }));
+        if (MA.celebrate) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.35 });
+        return { claimed: true, streak: streak, bonus: bonus };
+      }).catch(function (err) {
+        // Only undo the in-memory claim if no credit actually landed — rolling back
+        // after a real grant() would let a retry double-pay.
+        if (!credited) login = prevLogin;
+        throw err;
+      });
+    });
+  }
+
+  /* ---------- login popup ---------- */
+  var popupOpen = false;
+  function openPopup(info) {
+    if (popupOpen) return;
+    popupOpen = true;
+    var lastFocused = document.activeElement;
+    var titleId = "dailyModalTitle" + Date.now();
+
+    var overlay = el("div", { class: "daily-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId });
+    var card = el("div", { class: "daily-modal__card" });
+    overlay.appendChild(card);
+
+    function focusables() {
+      return Array.prototype.slice.call(overlay.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .filter(function (n) { return !n.disabled && n.offsetParent !== null; });
+    }
+    function close() {
+      if (!overlay.parentNode) return;
+      document.removeEventListener("keydown", onKeydown);
+      overlay.parentNode.removeChild(overlay);
+      popupOpen = false;
+      if (lastFocused && lastFocused.focus) { try { lastFocused.focus(); } catch (e) {} }
+    }
+    // Escape / tap-outside DISMISSES only — no kv write, popup reappears next open.
+    function onKeydown(e) { if (e.key === "Escape") { close(); return; } tabTrap(e); }
+    function tabTrap(e) {
+      if (e.key !== "Tab") return;
+      var f = focusables();
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+
+    card.appendChild(el("div", { class: "daily-modal__emoji", "aria-hidden": "true", text: "🔥" }));
+    card.appendChild(el("h3", { id: titleId, class: "daily-modal__title", text: "Day " + info.cyclePos + " of 7" }));
+    card.appendChild(el("div", { class: "daily-modal__bar" }, [
+      el("div", { class: "daily-modal__bar-fill", style: "width:" + Math.round((info.cyclePos / 7) * 100) + "%" })
+    ]));
+    card.appendChild(el("div", { class: "daily-modal__mult", text: info.multiplier.toFixed(1) + "× multiplier" }));
+    card.appendChild(el("div", { class: "daily-modal__bonus", text: "+" + info.bonus + " 🪙" }));
+
+    var claimBtn = el("button", { class: "btn btn--accent btn--block", type: "button", "aria-label": "Claim daily login bonus" }, "Claim");
+    claimBtn.addEventListener("click", function () {
+      if (claimBtn.disabled) return;
+      claimBtn.disabled = true;
+      claim().then(function (result) {
+        if (result && result.claimed) {
+          close();
+        } else {
+          // already claimed elsewhere (e.g. two popups) — just close, no error state to show
+          close();
+        }
+      }).catch(function () {
+        claimBtn.disabled = false;
+        if (MA.app && MA.app.toast) MA.app.toast("Couldn't claim right now — try again");
+      });
+    });
+    card.appendChild(claimBtn);
+
+    document.addEventListener("keydown", onKeydown);
+    document.body.appendChild(overlay);
+    setTimeout(function () { var f = focusables(); if (f.length) f[0].focus(); }, 30);
+  }
+
+  function showPopupIfDue() {
+    return ready.then(function () {
+      if (popupOpen) return;
+      var info = computeStreakInfo();
+      if (info.claimedToday) return;
+      openPopup(info);
+    });
+  }
+
+  /* ---------- Home streak widget (Task 7 mounts this) ---------- */
+  function renderWidget() {
+    var node = el("div", { class: "daily-widget", "aria-label": "Daily login streak" }, [
+      el("span", { "aria-hidden": "true", text: "🔥" }),
+      el("span", { class: "daily-widget__text", text: "Day 1 / 7" }),
+      el("span", { class: "daily-widget__mult", text: "1.0×" })
+    ]);
+    ready.then(function () {
+      var info = computeStreakInfo();
+      node.querySelector(".daily-widget__text").textContent = "Day " + info.cyclePos + " / 7";
+      node.querySelector(".daily-widget__mult").textContent = info.multiplier.toFixed(1) + "×";
+    });
+    return node;
+  }
+
+  // On boot, show the popup once today's bonus is unclaimed. If the first-launch
+  // character chooser is about to open (firstRunDone not yet set), wait for it to
+  // resolve (the ma:character event it fires on select) so the two modals never stack.
+  // Also gate on MA.characters.ready (guarded for the module being absent) —
+  // computeStreakInfo() reads getCharacter() for the Expert bonus/freeze, and
+  // independent getKV calls across modules aren't guaranteed to resolve in issue
+  // order, so skipping this wait can compute/display against a not-yet-hydrated
+  // (null) character on a returning user's first paint.
+  Promise.all([ready, MA.economy.ready, MA.characters ? MA.characters.ready : Promise.resolve()]).then(function () {
+    return MA.store.getKV("firstRunDone", false);
+  }).then(function (firstRunDone) {
+    if (!firstRunDone && MA.characters) {
+      window.addEventListener("ma:character", function once() {
+        window.removeEventListener("ma:character", once);
+        showPopupIfDue();
+      });
+    } else {
+      showPopupIfDue();
+    }
+  }).catch(function () {});
+
+  MA.daily = { getStreakInfo: getStreakInfo, claim: claim, showPopupIfDue: showPopupIfDue, renderWidget: renderWidget, ready: ready };
 })();
 
 </script>
@@ -3192,6 +3808,27 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     // appearance controls
     wrap.appendChild(el("div", { class: "section-title", text: "Appearance" }));
     wrap.appendChild(buildAppearance());
+
+    // character (Task 2: re-selectable any time, no first-run restriction)
+    wrap.appendChild(el("div", { class: "section-title", text: "Character" }));
+    var charCard = el("div", { class: "card stack" });
+    wrap.appendChild(charCard);
+    renderCharCard();
+    function onCharChange() { renderCharCard(); }
+    window.addEventListener("ma:character", onCharChange);
+    MA.app.onLeave(function () { window.removeEventListener("ma:character", onCharChange); });
+    function renderCharCard() {
+      charCard.innerHTML = "";
+      var id = MA.characters ? MA.characters.getCharacter() : null;
+      var def = id && MA.characters ? MA.characters.list().filter(function (c) { return c.id === id; })[0] : null;
+      charCard.appendChild(def
+        ? row(def.emoji + " " + def.name, def.bonus, null)
+        : el("p", { class: "muted", text: "No character selected yet." }));
+      charCard.appendChild(el("button", {
+        class: "btn btn--primary btn--block", style: "margin-top:8px",
+        onclick: function () { if (MA.characters) MA.characters.openChooser({ firstRun: false }); }
+      }, def ? "Switch character" : "Choose a character"));
+    }
 
     // data controls
     wrap.appendChild(el("div", { class: "section-title", text: "Your data" }));
