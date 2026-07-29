@@ -2441,7 +2441,12 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   // On boot, show the popup once today's bonus is unclaimed. If the first-launch
   // character chooser is about to open (firstRunDone not yet set), wait for it to
   // resolve (the ma:character event it fires on select) so the two modals never stack.
-  Promise.all([ready, MA.economy.ready]).then(function () {
+  // Also gate on MA.characters.ready (guarded for the module being absent) —
+  // computeStreakInfo() reads getCharacter() for the Expert bonus/freeze, and
+  // independent getKV calls across modules aren't guaranteed to resolve in issue
+  // order, so skipping this wait can compute/display against a not-yet-hydrated
+  // (null) character on a returning user's first paint.
+  Promise.all([ready, MA.economy.ready, MA.characters ? MA.characters.ready : Promise.resolve()]).then(function () {
     return MA.store.getKV("firstRunDone", false);
   }).then(function (firstRunDone) {
     if (!firstRunDone && MA.characters) {
