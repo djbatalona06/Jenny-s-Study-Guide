@@ -3489,6 +3489,8 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       }), "Weekly Quiz");
     }
 
+    if (MA.quizBuilder) wrap.appendChild(MA.quizBuilder.render());
+
     wrap.appendChild(el("div", { class: "section-title", text: "Quiz by subject" }));
     var list = el("div", { class: "list" });
     banks().forEach(function (b) {
@@ -3511,7 +3513,161 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     return runBank(b, { onBack: function () { MA.app.go("quiz"); }, onFinish: function () { MA.app.bumpStreak(); } });
   }
 
-  MA.quiz = { title: "Quizzes", scoreCard: scoreCard, renderHub: renderHub, renderBank: renderBank, weeklyBank: weeklyBank };
+  /* Seam for MA.quizBuilder: run an ad-hoc set of questions through this same
+     runner, so scoring and the earn hooks inside runBank apply to custom quizzes
+     exactly as they do to the weekly and by-subject ones. */
+  function runQuestions(questions, opts) {
+    return runBank({ id: "custom", title: "Custom Quiz", subject: "Custom", questions: questions }, opts);
+  }
+
+  MA.quiz = { title: "Quizzes", scoreCard: scoreCard, renderHub: renderHub, renderBank: renderBank, weeklyBank: weeklyBank, runQuestions: runQuestions };
+})();
+
+</script>
+<script>
+/* ---- js/modules/quiz-builder.js ---- */
+/* quiz-builder.js — "Build Your Quiz": one slider per question bank with a live
+   payout readout, then runs the chosen mix through the normal quiz engine
+   (MA.quiz.runQuestions) so scoring and the per-correct / >=80% earn hooks apply
+   exactly as they do to the weekly quiz. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var PER_CORRECT = 12;
+  var BONUS = 60;
+
+  function banks() { return (window.MA_DATA && MA_DATA.quizzes) || []; }
+  function mult() { return (MA.economy && MA.economy.effectiveMultiplier()) || 1; }
+  function fmtMoney(n) {
+    n = Math.round(n) || 0;
+    return "$" + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  injectStyle();
+
+  function render() {
+    var wrap = el("div", { class: "card stack qb" });
+    wrap.appendChild(el("div", { class: "row row--between" }, [
+      el("h3", { text: "🎚️ Build Your Quiz" }),
+      el("span", { class: "pill", id: "qbMult", text: "×" + mult() })
+    ]));
+    wrap.appendChild(el("p", { class: "muted", text: "Pick how many questions from each section. Payouts update as you go." }));
+
+    var counts = {};
+    var rows = [];
+    var list = el("div", { class: "qb-list" });
+
+    banks().forEach(function (b) {
+      var max = b.questions.length;
+      counts[b.id] = 0;
+      var payout = el("span", { class: "qb-row__payout", text: fmtMoney(0) });
+      var countLabel = el("span", { class: "qb-row__count", text: "0 / " + max });
+      var input = el("input", {
+        type: "range", min: "0", max: String(max), value: "0", step: "1",
+        class: "qb-range", "aria-label": b.title + " question count"
+      });
+      input.addEventListener("input", function () {
+        counts[b.id] = parseInt(input.value, 10) || 0;
+        refresh();
+      });
+      var row = el("div", { class: "qb-row" }, [
+        el("div", { class: "qb-row__head row row--between" }, [
+          el("span", { class: "qb-row__name", text: (b.emoji || "❓") + " " + b.title }),
+          countLabel
+        ]),
+        input,
+        el("div", { class: "qb-row__foot row row--between" }, [
+          el("span", { class: "muted", text: "up to" }), payout
+        ])
+      ]);
+      list.appendChild(row);
+      rows.push({ bank: b, input: input, payout: payout, countLabel: countLabel, max: max });
+    });
+    wrap.appendChild(list);
+
+    var totalEl = el("strong", { class: "qb-total__value", text: fmtMoney(0) });
+    var bonusEl = el("div", { class: "muted qb-bonus", text: "" });
+    wrap.appendChild(el("div", { class: "qb-total stack" }, [
+      el("div", { class: "row row--between" }, [el("span", { text: "Potential earnings" }), totalEl]),
+      bonusEl
+    ]));
+
+    var startBtn = el("button", { class: "btn btn--primary btn--block", type: "button", disabled: true }, "Start quiz");
+    startBtn.addEventListener("click", function () { start(counts); });
+    wrap.appendChild(startBtn);
+
+    function refresh() {
+      var m = mult(), total = 0, picked = 0;
+      rows.forEach(function (r) {
+        var n = parseInt(r.input.value, 10) || 0;
+        counts[r.bank.id] = n;
+        picked += n;
+        var pay = Math.round(n * PER_CORRECT * m);
+        total += pay;
+        r.payout.textContent = fmtMoney(pay);
+        r.countLabel.textContent = n + " / " + r.max;
+      });
+      totalEl.textContent = fmtMoney(total);
+      bonusEl.textContent = "Score 80% or higher for a " + fmtMoney(BONUS * m) + " bonus";
+      var multPill = wrap.querySelector("#qbMult");
+      if (multPill) multPill.textContent = "×" + m;
+      startBtn.disabled = picked === 0;
+      startBtn.textContent = picked ? "Start " + picked + "-question quiz" : "Start quiz";
+    }
+    refresh();
+
+    function onEconomy() { refresh(); }
+    window.addEventListener("ma:coins", onEconomy);
+    window.addEventListener("ma:login", onEconomy);
+    window.addEventListener("ma:character", onEconomy);
+    if (MA.app && MA.app.onLeave) MA.app.onLeave(function () {
+      window.removeEventListener("ma:coins", onEconomy);
+      window.removeEventListener("ma:login", onEconomy);
+      window.removeEventListener("ma:character", onEconomy);
+    });
+
+    return wrap;
+  }
+
+  /* counts: { <bankId>: n }. Draws n questions from each bank and runs the mix
+     through the shared quiz engine. */
+  function start(counts) {
+    var seed = U.uid();
+    var questions = [];
+    banks().forEach(function (b) {
+      var n = Math.max(0, Math.min(parseInt(counts[b.id], 10) || 0, b.questions.length));
+      if (n) questions = questions.concat(U.shuffle(b.questions, seed + b.id).slice(0, n));
+    });
+    if (!questions.length) { MA.app.toast("Pick at least one question."); return; }
+    questions = U.shuffle(questions, seed);
+    MA.app.setView(MA.quiz.runQuestions(questions, {
+      seed: seed,
+      title: "Custom Quiz",
+      onBack: function () { MA.app.go("quiz"); },
+      onFinish: function () { MA.app.bumpStreak(); }
+    }), "Custom Quiz");
+  }
+
+  function injectStyle() {
+    var css =
+      ".qb-list{display:flex;flex-direction:column;gap:14px;margin-top:4px}" +
+      ".qb-row{display:flex;flex-direction:column;gap:6px}" +
+      ".qb-row__name{font-weight:700;font-size:var(--fs-sm)}" +
+      ".qb-row__count{color:var(--muted-fg);font-size:var(--fs-xs);font-variant-numeric:tabular-nums}" +
+      ".qb-row__payout{font-weight:800;color:var(--success);font-variant-numeric:tabular-nums}" +
+      ".qb-row__foot{font-size:var(--fs-xs)}" +
+      ".qb-range{width:100%;accent-color:var(--primary);height:26px}" +
+      ".qb-range:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:6px}" +
+      ".qb-total{border-top:1px solid var(--border);padding-top:12px;margin-top:4px;font-size:var(--fs-sm)}" +
+      ".qb-total__value{font-size:var(--fs-lg);color:var(--success);font-variant-numeric:tabular-nums}" +
+      ".qb-bonus{font-size:var(--fs-xs)}";
+    var s = document.createElement("style");
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  MA.quizBuilder = { render: render, start: start };
 })();
 
 </script>
