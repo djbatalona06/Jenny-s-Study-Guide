@@ -3906,12 +3906,15 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       wrap.appendChild(stage);
       var partInfo = el("div", { id: "v3dPart", class: "card muted", style: "margin-top:10px;font-size:var(--fs-sm)", text: "Tap a labeled part to see what it is." });
       wrap.appendChild(partInfo);
+      var quizBtn = MA.anatomyQuiz && MA.anatomyQuiz.entryButton(topic.id);
+      if (quizBtn) wrap.appendChild(quizBtn);
     } else {
       // info tab
       var info = el("div", { class: "card", style: "margin-top:4px" }, [
         el("p", { class: "muted", text: topic.blurb }),
         el("div", { id: "v3dPart", class: "muted", style: "display:none" }),
-        topic.deck ? el("button", { class: "btn btn--accent btn--block", style: "margin-top:14px", onclick: function () { MA.app.go("study/" + topic.deck); } }, "📑 Study related flashcards") : null
+        topic.deck ? el("button", { class: "btn btn--accent btn--block", style: "margin-top:14px", onclick: function () { MA.app.go("study/" + topic.deck); } }, "📑 Study related flashcards") : null,
+        (MA.anatomyQuiz && MA.anatomyQuiz.entryButton(topic.id)) || null
       ]);
       wrap.appendChild(info);
       var strip = MA.diagrams && MA.diagrams.relatedStrip(MA.diagrams.TOPIC_SYS[topic.id]);
@@ -4183,6 +4186,142 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
 
   MA.viewer3d = { title: "Anatomy 3D", render: render };
+})();
+
+</script>
+<script>
+/* ---- js/modules/anatomy-quiz.js ---- */
+/* anatomy-quiz.js — "Identify the Part": a short multiple-choice quiz per anatomy
+   topic, built from the cards of the topic's linked flashcard deck. The card's
+   definition is the prompt; the options are that card's term plus three
+   distractor terms from the same deck. Correct answers earn coins through
+   MA.economy.earnCoins, so the streak x character multiplier applies. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var MAX_Q = 8;
+  var MIN_CARDS = 4;
+
+  function topics() { return (window.MA_DATA && MA_DATA.topics) || []; }
+  function decks() { return (window.MA_DATA && MA_DATA.decks) || []; }
+  function topicById(id) { return topics().filter(function (t) { return t.id === id; })[0]; }
+  function deckById(id) { return decks().filter(function (d) { return d.id === id; })[0]; }
+
+  /* Cards usable as questions: need both a term and a definition. */
+  function usableCards(topic) {
+    if (!topic || !topic.deck) return [];
+    var deck = deckById(topic.deck);
+    if (!deck || !deck.cards) return [];
+    return deck.cards.filter(function (c) { return c && c.term && c.def; });
+  }
+
+  function isAvailable(topicId) { return usableCards(topicById(topicId)).length >= MIN_CARDS; }
+
+  /* Most decks mix two card shapes: some terms are already phrased as questions
+     ("What plane divides…?" / "Frontal plane"), the rest are label-and-description
+     ("Tricuspid valve" / "Valve between…"). Ask each card from whichever side reads
+     as the prompt, and draw distractors from the same pool so the four options are
+     always the same kind of thing. */
+  function isAsked(card) { return /\?\s*$/.test(card.term); }
+  function promptOf(card) { return isAsked(card) ? card.term : card.def; }
+  function answerOf(card) { return isAsked(card) ? card.def : card.term; }
+
+  /* Build the question list. Seeded per topic so a reload gives the same quiz. */
+  function buildQuestions(topic) {
+    var cards = usableCards(topic);
+    if (cards.length < MIN_CARDS) return [];
+    var asked = cards.filter(isAsked), labelled = cards.filter(function (c) { return !isAsked(c); });
+    var picked = U.shuffle(cards, topic.id).slice(0, Math.min(MAX_Q, cards.length));
+    return picked.map(function (card, i) {
+      var pool = isAsked(card) ? asked : labelled;
+      var answer = answerOf(card);
+      var others = pool.filter(function (c) { return answerOf(c) !== answer; });
+      // a pool too small for 3 distractors falls back to the full deck
+      if (others.length < 3) others = cards.filter(function (c) { return answerOf(c) !== answer; });
+      var distractors = U.shuffle(others, topic.id + ":" + i).slice(0, 3).map(answerOf);
+      return {
+        prompt: promptOf(card),
+        answer: answer,
+        choices: U.shuffle([answer].concat(distractors), topic.id + ":opt:" + i)
+      };
+    });
+  }
+
+  function start(topicId) {
+    var topic = topicById(topicId);
+    if (!topic) { MA.app.toast("Topic not found."); return; }
+    var qs = buildQuestions(topic);
+    if (!qs.length) { MA.app.toast("Not enough cards for a quiz yet."); return; }
+    MA.app.setView(renderQuiz(topic, qs), "Identify the Part");
+  }
+
+  function renderQuiz(topic, qs) {
+    var wrap = el("div", { class: "stack" });
+    wrap.appendChild(el("div", { class: "hero" }, [
+      el("div", { class: "pill", text: (topic.emoji || "🫀") + " " + topic.name }),
+      el("h2", { text: "Identify the Part" }),
+      el("div", { class: "muted", text: qs.length + " questions · +8 🪙 each" })
+    ]));
+    var body = el("div");
+    wrap.appendChild(body);
+
+    var idx = 0, score = 0;
+    step();
+
+    function step() {
+      body.innerHTML = "";
+      if (idx >= qs.length) { finish(); return; }
+      var q = qs[idx];
+      body.appendChild(el("div", { class: "muted center", text: (idx + 1) + " / " + qs.length }));
+      body.appendChild(el("div", { class: "card" }, [el("h3", { text: q.prompt })]));
+      var answered = false;
+      q.choices.forEach(function (choice) {
+        var b = el("button", { class: "opt", text: choice });
+        b.addEventListener("click", function () {
+          if (answered) return; answered = true;
+          var ok = choice === q.answer;
+          if (ok) {
+            b.classList.add("correct");
+            score++;
+            MA.economy.earnCoins(8, "anatomy", b);
+          } else {
+            b.classList.add("wrong");
+            Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) {
+              if (o.textContent === q.answer) o.classList.add("correct");
+            });
+          }
+          Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) { o.disabled = true; });
+          body.appendChild(el("button", {
+            class: "btn btn--primary btn--block", style: "margin-top:14px",
+            onclick: function () { idx++; step(); }
+          }, idx + 1 >= qs.length ? "See score" : "Next question"));
+        });
+        body.appendChild(b);
+      });
+    }
+
+    function finish() {
+      MA.economy.earnCoins(30, "anatomy-done");
+      if (MA.celebrate && score / qs.length >= 0.8) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
+      body.appendChild(MA.quiz.scoreCard(score, qs.length, function () { MA.app.go("anatomy/" + topic.id); }));
+    }
+
+    return wrap;
+  }
+
+  /* Entry button mounted by the anatomy topic view. Returns null when the
+     topic's deck is too small to build a 4-option question. */
+  function entryButton(topicId) {
+    if (!isAvailable(topicId)) return null;
+    return el("button", {
+      class: "btn btn--accent btn--block", style: "margin-top:10px",
+      "aria-label": "Start the Identify the Part quiz",
+      onclick: function () { start(topicId); }
+    }, "🔎 Identify the Part");
+  }
+
+  MA.anatomyQuiz = { start: start, entryButton: entryButton, isAvailable: isAvailable, buildQuestions: buildQuestions };
 })();
 
 </script>
