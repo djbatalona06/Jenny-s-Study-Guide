@@ -914,11 +914,11 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       <button class="tabbar__btn" data-route="anatomy" aria-label="Anatomy 3D">
         <span class="tabbar__icon" aria-hidden="true">🫀</span><span class="tabbar__label">Anatomy</span>
       </button>
+      <button class="tabbar__btn" data-route="shop" aria-label="Shop">
+        <span class="tabbar__icon" aria-hidden="true">🛍️</span><span class="tabbar__label">Shop</span>
+      </button>
       <button class="tabbar__btn" data-route="notes" aria-label="Notes">
         <span class="tabbar__icon" aria-hidden="true">📓</span><span class="tabbar__label">Notes</span>
-      </button>
-      <button class="tabbar__btn" data-route="more" aria-label="More">
-        <span class="tabbar__icon" aria-hidden="true">⋯</span><span class="tabbar__label">More</span>
       </button>
     </nav>
   </div>
@@ -2241,6 +2241,29 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
   .daily-widget__mult { color: var(--muted-fg); font-weight: 700; }
   @media (prefers-reduced-motion: reduce) { .daily-modal, .daily-modal__card { transition: none !important; animation: none !important; } }
+
+  /* ---- home study-economy panel ---- */
+  .home-econ__char { font-weight: 700; font-size: var(--fs-sm); }
+  .home-econ__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .home-econ__stat {
+    display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--card);
+    font-size: var(--fs-xs);
+  }
+  .home-econ__stat-value { font-size: var(--fs-lg); color: var(--success); font-variant-numeric: tabular-nums; }
+  .home-econ__goal { font-size: var(--fs-xs); }
+  .home-econ__featured {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 12%, var(--card)), var(--card));
+    cursor: pointer; font: inherit; color: inherit;
+  }
+  .home-econ__featured:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .home-econ__featured-emoji { font-size: 30px; line-height: 1; }
+  .home-econ__featured-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .home-econ__featured-label { font-size: var(--fs-xs); color: var(--muted-fg); }
+  .home-econ__featured-name { font-weight: 700; font-size: var(--fs-sm); }
+  .home-econ__featured-price { font-weight: 800; color: var(--success); font-variant-numeric: tabular-nums; }
 </style>
 <script>
 /* ---- js/modules/daily.js ---- */
@@ -2463,6 +2486,507 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
 })();
 
 </script>
+<style>
+  /* ---------- shop: catalog grid, chips, detail sheet, confirm dialog ---------- */
+  .shop-header { margin-bottom: var(--sp-2); }
+  .shop-wallet { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: var(--fs-lg); }
+  .shop-char-badge { font-size: 22px; line-height: 1; }
+  .shop-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .shop-chips::-webkit-scrollbar { display: none; }
+  .shop-chip {
+    flex: none; border: 1px solid var(--border-2, var(--border)); background: var(--card-2, var(--card));
+    color: var(--fg-soft); font-weight: 700; font-size: var(--fs-sm); padding: 8px 14px;
+    border-radius: var(--r-full); cursor: pointer; white-space: nowrap;
+  }
+  .shop-chip[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: transparent; }
+  .shop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); }
+  @media (min-width: 520px) { .shop-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 760px) { .shop-grid { grid-template-columns: repeat(4, 1fr); } }
+  .shop-card {
+    display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow); cursor: pointer; text-align: left;
+    padding: 0; font: inherit; color: inherit; width: 100%;
+  }
+  .shop-card:active { transform: scale(.98); }
+  .shop-card__art { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .shop-card__body { padding: var(--sp-3); display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .shop-card__name { font-weight: 700; font-size: var(--fs-sm); line-height: 1.3; }
+  .shop-card__price { font-weight: 800; color: var(--primary); font-size: var(--fs-base); }
+  .shop-card__action { padding: 0 var(--sp-3) var(--sp-3); }
+
+  .shop-art--t1 { background: linear-gradient(135deg, color-mix(in srgb, var(--warm) 55%, var(--card-2)), color-mix(in srgb, var(--accent) 42%, var(--card-2))); }
+  .shop-art--t2 { background: linear-gradient(135deg, color-mix(in srgb, var(--secondary) 48%, var(--card-2)), color-mix(in srgb, var(--primary) 55%, var(--card-2))); }
+  .shop-art--t3 { background: linear-gradient(135deg, color-mix(in srgb, var(--success) 50%, var(--card-2)), color-mix(in srgb, var(--primary) 38%, var(--card-2))); }
+  .shop-art--t4 { background: linear-gradient(135deg, color-mix(in srgb, var(--primary-700) 60%, var(--card-2)), color-mix(in srgb, var(--primary) 45%, var(--card-2))); }
+  .shop-art--t5 { background: linear-gradient(135deg, color-mix(in srgb, var(--warm) 42%, var(--card-2)), color-mix(in srgb, var(--primary-700) 55%, var(--card-2))); }
+
+  .shop-detail__art { aspect-ratio: 1; max-height: 220px; display: flex; align-items: center; justify-content: center; font-size: 64px; border-radius: var(--r); margin-bottom: var(--sp-3); }
+  .shop-detail__price { font-weight: 800; font-size: var(--fs-xl); color: var(--primary); margin: var(--sp-2) 0; }
+
+  .shop-gallery__stage { aspect-ratio: 16/10; border-radius: var(--r); display: flex; align-items: center; justify-content: center; margin-bottom: var(--sp-2); }
+  .shop-gallery__emoji { font-size: 56px; }
+  .shop-gallery__label { text-align: center; font-weight: 700; font-size: var(--fs-sm); color: var(--muted-fg); margin-bottom: 6px; }
+  .shop-gallery__dots { display: flex; justify-content: center; gap: 8px; margin-bottom: var(--sp-3); }
+  .shop-gallery__dot { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--border-2, var(--border)); background: var(--muted-2, var(--muted)); cursor: pointer; }
+  .shop-gallery__dot[aria-selected="true"] { background: var(--primary); border-color: transparent; }
+
+  .shop-confirm-modal {
+    position: fixed; inset: 0; z-index: 9420; background: rgba(0,0,0,.72);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+  }
+  .shop-confirm-modal__card {
+    position: relative; width: 100%; max-width: 380px; max-height: 92vh; overflow: auto;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); padding: 26px 22px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .shop-confirm-modal__emoji { font-size: 44px; line-height: 1; }
+  .shop-confirm-modal__title { font-size: var(--fs-lg); font-weight: 800; margin: 2px 0 0; }
+  .shop-confirm-modal__list-price { font-size: var(--fs-sm); color: var(--muted-fg); text-decoration: line-through; }
+  .shop-confirm-modal__price { font-size: var(--fs-xl); font-weight: 800; color: var(--primary); }
+  .shop-confirm-modal__price--diva { color: var(--success); }
+  .shop-confirm-modal__err { color: var(--destructive); font-size: var(--fs-sm); font-weight: 700; min-height: 1.2em; }
+  .shop-confirm-modal .btn { width: 100%; margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) { .shop-confirm-modal, .shop-confirm-modal__card { transition: none !important; animation: none !important; } }
+</style>
+<script>
+/* ---- js/modules/shop.js ---- */
+/* shop.js — 56-item catalog (5 tiers), category-chip + 2-col grid render, detail
+   sheet (with a 5-scene gallery for the mansion), and the purchase flow with the
+   Diva 15% checkout discount and `owned` persistence. Reads MA.economy for
+   wallet/spend and MA.characters for the active character; writes to the `owned`
+   store (added in Task 1) via MA.store. Does not wire the bottom nav tab — that is
+   Task 7's job; this task exposes the view via the More menu + a "#/shop" route
+   (see app.js) so it is reachable for verification. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  /* ---------- catalog (56 items, tiers 1-5; price = usd = coins) ---------- */
+  var CATALOG = [
+    /* ---- Tier 1: Munchies (10) ---- */
+    { id: "hot-cheetos", tier: 1, name: "Hot Cheetos", emoji: "🌶️", usd: 3, blurb: "A spicy, crunchy classic snack for a quick pick-me-up between study sessions." },
+    { id: "glazed-donut", tier: 1, name: "Glazed Donut", emoji: "🍩", usd: 4, blurb: "A soft, sweet glazed donut — the perfect reward for finishing a deck." },
+    { id: "pizza-slice", tier: 1, name: "Pizza Slice", emoji: "🍕", usd: 5, blurb: "One hot, cheesy slice, fresh from the oven." },
+    { id: "iced-latte", tier: 1, name: "Iced Latte", emoji: "🧋", usd: 6, blurb: "A chilled, creamy iced latte to power through your next review." },
+    { id: "chocolate-bar", tier: 1, name: "Chocolate Bar", emoji: "🍫", usd: 6, blurb: "A rich chocolate bar for a sweet little victory lap." },
+    { id: "boba-tea", tier: 1, name: "Boba Tea", emoji: "🧋", usd: 7, blurb: "Milk tea with chewy tapioca pearls — bubbly motivation in a cup." },
+    { id: "cheeseburger-combo", tier: 1, name: "Cheeseburger Combo", emoji: "🍔", usd: 12, blurb: "A juicy cheeseburger with fries and a drink on the side." },
+    { id: "acai-bowl", tier: 1, name: "Açaí Bowl", emoji: "🍨", usd: 13, blurb: "A cool, fruity açaí bowl topped with granola and berries." },
+    { id: "ramen-bowl", tier: 1, name: "Ramen Bowl", emoji: "🍜", usd: 14, blurb: "A steaming bowl of ramen, rich broth and all." },
+    { id: "sushi-roll", tier: 1, name: "Sushi Roll", emoji: "🍣", usd: 18, blurb: "A fresh sushi roll, perfect for celebrating a good study day." },
+
+    /* ---- Tier 2: Fashion & Beauty (12) ---- */
+    { id: "lululemon-align-set", tier: 2, name: "Lululemon Align Set", emoji: "🧘", usd: 200, blurb: "A buttery-soft matching set for study-to-gym days." },
+    { id: "telfar-shopping-bag", tier: 2, name: "Telfar Shopping Bag", emoji: "👜", usd: 257, blurb: "The it-bag everyone's been trying to get their hands on." },
+    { id: "sephora-haul", tier: 2, name: "Sephora Haul", emoji: "💄", usd: 500, blurb: "A curated haul of your favorite makeup and skincare picks." },
+    { id: "louboutin-so-kate", tier: 2, name: "Louboutin So Kate Heels", emoji: "👠", usd: 795, blurb: "Sharp, iconic heels with that signature red sole." },
+    { id: "apple-watch-ultra-2", tier: 2, name: "Apple Watch Ultra 2", emoji: "⌚", usd: 800, blurb: "A rugged, feature-packed smartwatch built for every day." },
+    { id: "gucci-marmont-dress", tier: 2, name: "Gucci Marmont Dress", emoji: "👗", usd: 2650, blurb: "An elegant dress with the house's signature double-G hardware." },
+    { id: "dior-saddle-bag", tier: 2, name: "Dior Saddle Bag", emoji: "👛", usd: 4200, blurb: "The iconic saddle-shaped bag, reimagined in a versatile silhouette." },
+    { id: "van-cleef-alhambra", tier: 2, name: "Van Cleef & Arpels Alhambra Necklace", emoji: "📿", usd: 6900, blurb: "A four-leaf clover pendant necklace, delicate and timeless." },
+    { id: "cartier-love-bracelet", tier: 2, name: "Cartier Love Bracelet", emoji: "💛", usd: 7350, blurb: "A sleek bangle with the brand's signature screw motif." },
+    { id: "rolex-datejust-36", tier: 2, name: "Rolex Datejust 36", emoji: "⌚", usd: 9550, blurb: "A classic, understated watch that never goes out of style." },
+    { id: "chanel-classic-flap", tier: 2, name: "Chanel Classic Flap Bag", emoji: "👜", usd: 10800, blurb: "A quilted flap bag with the interlocking-C clasp, an enduring icon." },
+    { id: "hermes-birkin-30", tier: 2, name: "Hermès Birkin 30", emoji: "👜", usd: 25000, blurb: "The ultimate status bag, hand-stitched and famously hard to get." },
+
+    /* ---- Tier 3: Loan Payoffs & Grown-Up Wins (10) ---- */
+    { id: "loan-500", tier: 3, name: "$500 Loan Payoff", emoji: "💵", usd: 500, blurb: "Knock $500 off a loan balance — real progress, real relief." },
+    { id: "year-of-scrubs", tier: 3, name: "A Year of Scrubs", emoji: "🩺", usd: 600, blurb: "A full year's worth of comfortable, durable scrubs for clinicals." },
+    { id: "one-months-rent", tier: 3, name: "One Month's Rent", emoji: "🏠", usd: 1800, blurb: "Cover a full month of rent, one less bill to stress about." },
+    { id: "macbook-pro", tier: 3, name: "MacBook Pro", emoji: "💻", usd: 2000, blurb: "A powerful laptop for note-taking, papers, and everything after graduation." },
+    { id: "loan-1000", tier: 3, name: "$1,000 Loan Payoff", emoji: "💵", usd: 1000, blurb: "Put $1,000 toward paying down student loans." },
+    { id: "loan-2500", tier: 3, name: "$2,500 Loan Payoff", emoji: "💵", usd: 2500, blurb: "Chip away $2,500 from your loan balance." },
+    { id: "emergency-fund-3mo", tier: 3, name: "3-Month Emergency Fund", emoji: "🛟", usd: 5000, blurb: "Three months of expenses tucked away for peace of mind." },
+    { id: "loan-5000", tier: 3, name: "$5,000 Loan Payoff", emoji: "💵", usd: 5000, blurb: "A serious $5,000 dent in your loan balance." },
+    { id: "loan-10000", tier: 3, name: "$10,000 Loan Payoff", emoji: "💸", usd: 10000, blurb: "Wipe out $10,000 of debt in one shot." },
+    { id: "pay-off-a-semester", tier: 3, name: "Pay Off a Semester", emoji: "🎓", usd: 12000, blurb: "Cover a full semester's tuition, free and clear." },
+
+    /* ---- Tier 4: Cars (12) ---- */
+    { id: "tesla-model-3", tier: 4, name: "Tesla Model 3", emoji: "🚗", usd: 42000, blurb: "A sleek, efficient electric sedan built for daily driving." },
+    { id: "porsche-macan", tier: 4, name: "Porsche Macan", emoji: "🚙", usd: 65000, blurb: "A compact luxury SUV with sports-car reflexes." },
+    { id: "porsche-718-cayman", tier: 4, name: "Porsche 718 Cayman", emoji: "🏎️", usd: 70000, blurb: "A mid-engine coupe built for pure driving feel." },
+    { id: "porsche-718-boxster", tier: 4, name: "Porsche 718 Boxster", emoji: "🏎️", usd: 72000, blurb: "An open-top roadster with balanced, precise handling." },
+    { id: "porsche-cayenne", tier: 4, name: "Porsche Cayenne", emoji: "🚙", usd: 80000, blurb: "A performance SUV with room for the whole crew." },
+    { id: "porsche-panamera", tier: 4, name: "Porsche Panamera", emoji: "🏎️", usd: 95000, blurb: "A four-door grand tourer with genuine sports-car pace." },
+    { id: "range-rover-sport", tier: 4, name: "Range Rover Sport", emoji: "🚙", usd: 110000, blurb: "A refined, capable SUV built for city and trail alike." },
+    { id: "porsche-911-carrera", tier: 4, name: "Porsche 911 Carrera", emoji: "🏎️", usd: 115000, blurb: "The benchmark sports car, instantly recognizable, endlessly capable." },
+    { id: "mercedes-g-wagon", tier: 4, name: "Mercedes G-Wagon", emoji: "🚙", usd: 140000, blurb: "A boxy, iconic off-roader with unmistakable presence." },
+    { id: "porsche-taycan-turbo", tier: 4, name: "Porsche Taycan Turbo", emoji: "⚡", usd: 190000, blurb: "An all-electric sports sedan with blistering acceleration." },
+    { id: "porsche-911-turbo-s", tier: 4, name: "Porsche 911 Turbo S", emoji: "🏎️", usd: 230000, blurb: "The top-tier 911, turbocharged for serious performance." },
+    { id: "porsche-918-spyder", tier: 4, name: "Porsche 918 Spyder", emoji: "🏁", usd: 1000000, blurb: "A hybrid hypercar built in limited numbers, the stuff of dreams." },
+
+    /* ---- Tier 5: Real Estate & Experiences (12) ---- */
+    { id: "coachella-vip", tier: 5, name: "Coachella VIP Weekend", emoji: "🎪", usd: 5000, blurb: "VIP passes to a weekend of music under the desert sun." },
+    { id: "disney-vip-week", tier: 5, name: "Disney VIP Week", emoji: "🏰", usd: 12000, blurb: "A full week at the parks with VIP line-skipping access." },
+    { id: "first-class-paris", tier: 5, name: "First Class to Paris", emoji: "✈️", usd: 15000, blurb: "A first-class flight to Paris, champagne and lie-flat seats included." },
+    { id: "siblings-nursing-fund", tier: 5, name: "Sibling's Nursing School Fund", emoji: "🎓", usd: 30000, blurb: "Fund a sibling's nursing school tuition, pay it forward." },
+    { id: "dream-wedding", tier: 5, name: "Dream Wedding", emoji: "💍", usd: 75000, blurb: "A fully planned dream wedding, every detail covered." },
+    { id: "private-island-week", tier: 5, name: "Private Island Week", emoji: "🏝️", usd: 250000, blurb: "A week on a private island, just you and the ocean." },
+    { id: "bellevue-condo", tier: 5, name: "Bellevue Condo", emoji: "🏢", usd: 900000, blurb: "A modern condo in Bellevue, close to everything." },
+    { id: "hawaii-vacation-home", tier: 5, name: "Hawaii Vacation Home", emoji: "🌺", usd: 1800000, blurb: "A vacation home in Hawaii for whenever you need the beach." },
+    {
+      id: "seatac-mansion", tier: 5, name: "SeaTac Mansion", emoji: "🏡", usd: 2500000,
+      blurb: "A sprawling mansion near SeaTac with room for everyone you love.",
+      gallery: [
+        { label: "Exterior", emoji: "🏡" },
+        { label: "Kitchen", emoji: "🍳" },
+        { label: "Pool", emoji: "🏊" },
+        { label: "View", emoji: "🌄" },
+        { label: "Bedroom", emoji: "🛏️" }
+      ]
+    },
+    { id: "napa-vineyard", tier: 5, name: "Napa Valley Vineyard", emoji: "🍇", usd: 3200000, blurb: "A working vineyard estate in Napa Valley." },
+    { id: "lake-washington-waterfront", tier: 5, name: "Lake Washington Waterfront Estate", emoji: "🌊", usd: 4500000, blurb: "A waterfront estate on Lake Washington, views for days." },
+    { id: "nyc-penthouse", tier: 5, name: "NYC Penthouse", emoji: "🌆", usd: 6000000, blurb: "A penthouse above the New York City skyline." }
+  ];
+
+  var TIER_LABEL = { 1: "Munchies", 2: "Fashion", 3: "Loan Payoffs", 4: "Cars", 5: "Real Estate" };
+  var TIER_ART_CLASS = { 1: "shop-art--t1", 2: "shop-art--t2", 3: "shop-art--t3", 4: "shop-art--t4", 5: "shop-art--t5" };
+  var CHIPS = [
+    { key: "all", label: "All" },
+    { key: 1, label: "Munchies" },
+    { key: 2, label: "Fashion" },
+    { key: 3, label: "Loan Payoffs" },
+    { key: 4, label: "Cars" },
+    { key: 5, label: "Real Estate" },
+    { key: "owned", label: "Owned" }
+  ];
+  var CHAR_EMOJI = { diva: "👑", prowler: "🐆", expert: "🧠", analyst: "🔍" };
+
+  function byId(id) {
+    for (var i = 0; i < CATALOG.length; i++) if (CATALOG[i].id === id) return CATALOG[i];
+    return null;
+  }
+
+  function fmtMoney(n) {
+    n = Math.round(n) || 0;
+    var neg = n < 0; n = Math.abs(n);
+    var s = String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return (neg ? "-" : "") + "$" + s;
+  }
+
+  function getCharacter() {
+    return (MA.characters && MA.characters.getCharacter) ? MA.characters.getCharacter() : null;
+  }
+  function finalPrice(usd) {
+    return Math.round(usd * (getCharacter() === "diva" ? 0.85 : 1));
+  }
+
+  /* ---------- owned set (in-memory, hydrated from the "owned" store) ---------- */
+  // ownedSet[id] is truthy the instant a purchase is CLAIMED (see buy()), not only
+  // once it's persisted — this is what makes the double-buy guard synchronous.
+  var ownedSet = {};
+  var ready = MA.store.all("owned").then(function (list) {
+    list.forEach(function (r) { ownedSet[r.id] = r; });
+  }).catch(function () { ownedSet = {}; });
+
+  function isOwned(id) { return !!ownedSet[id]; }
+
+  /* ---------- purchase (buy-exactly-once guard) ----------
+     See _shared-context.md cross-task notes / MA.characters.select for why this
+     shape: the "already claimed?" check-and-set on the in-memory ownedSet happens
+     synchronously, with no await/.then between the read and the write, so two
+     overlapping buy() calls for the same id (double-click, or two controls firing
+     before the first settles) cannot both pass the check and both spend(). The
+     claim is rolled back ONLY when no charge actually landed (insufficient funds,
+     or spend() itself failed) — never after a real spend, which would authorize a
+     double payout on retry. */
+  function buy(id) {
+    return ready.then(function () {
+      if (ownedSet[id]) return { ok: false, reason: "owned" };
+      var item = byId(id);
+      if (!item) return { ok: false, reason: "missing" };
+      // synchronous claim — first statement after the read above, no await/.then in between.
+      ownedSet[id] = { id: id, _pending: true };
+      var credited = false;
+      var price = finalPrice(item.usd);
+      return MA.economy.ready.then(function () {
+        var wallet = MA.economy.getWallet();
+        if (wallet < price) {
+          delete ownedSet[id]; // no charge occurred -> release the claim
+          return { ok: false, reason: "funds", shortfall: price - wallet };
+        }
+        return MA.economy.spend(price).then(function (success) {
+          if (!success) {
+            delete ownedSet[id];
+            return { ok: false, reason: "funds", shortfall: price - MA.economy.getWallet() };
+          }
+          credited = true;
+          var rec = { id: id, at: Date.now(), price: price, usd: item.usd };
+          ownedSet[id] = rec;
+          return MA.store.put("owned", rec).then(function () {
+            return { ok: true, price: price, record: rec };
+          }).catch(function () {
+            // charge already happened — keep the in-memory claim regardless of the
+            // persistence outcome; rolling back here would let a retry double-spend.
+            return { ok: true, price: price, record: rec, persistWarning: true };
+          });
+        });
+      }).catch(function (err) {
+        if (!credited) delete ownedSet[id];
+        throw err;
+      });
+    });
+  }
+
+  /* ---------- confirm dialog ---------- */
+  var confirmOpen = false;
+  function openConfirm(item, onCancelOrClose) {
+    if (confirmOpen) { if (onCancelOrClose) onCancelOrClose(); return; }
+    confirmOpen = true;
+    var lastFocused = document.activeElement;
+    var titleId = "shopConfirmTitle" + Date.now();
+    var price = finalPrice(item.usd);
+    var diva = getCharacter() === "diva" && price !== item.usd;
+
+    var overlay = el("div", { class: "shop-confirm-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId });
+    var card = el("div", { class: "shop-confirm-modal__card" });
+    overlay.appendChild(card);
+
+    function focusables() {
+      return Array.prototype.slice.call(overlay.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+        .filter(function (n) { return !n.disabled && n.offsetParent !== null; });
+    }
+    function close(purchased) {
+      if (!overlay.parentNode) return;
+      document.removeEventListener("keydown", onKeydown);
+      overlay.parentNode.removeChild(overlay);
+      confirmOpen = false;
+      if (!purchased && onCancelOrClose) onCancelOrClose();
+      if (lastFocused && lastFocused.focus) { try { lastFocused.focus(); } catch (e) {} }
+    }
+    function onKeydown(e) {
+      if (e.key === "Escape") { close(false); return; }
+      if (e.key === "Tab") {
+        var f = focusables();
+        if (!f.length) return;
+        var first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(false); });
+
+    card.appendChild(el("div", { class: "shop-confirm-modal__emoji", "aria-hidden": "true", text: item.emoji }));
+    card.appendChild(el("h3", { id: titleId, class: "shop-confirm-modal__title", text: "Buy " + item.name + "?" }));
+    if (diva) {
+      card.appendChild(el("div", { class: "shop-confirm-modal__list-price", text: fmtMoney(item.usd) }));
+      card.appendChild(el("div", { class: "shop-confirm-modal__price shop-confirm-modal__price--diva", text: fmtMoney(price) + " · 15% off (👑 Diva)" }));
+    } else {
+      card.appendChild(el("div", { class: "shop-confirm-modal__price", text: fmtMoney(price) }));
+    }
+
+    var errEl = el("div", { class: "shop-confirm-modal__err", "aria-live": "polite" });
+
+    var confirmBtn = el("button", { class: "btn btn--primary", type: "button", "aria-label": "Confirm purchase of " + item.name + " for " + fmtMoney(price) }, "Confirm — " + fmtMoney(price));
+    var cancelBtn = el("button", { class: "btn btn--ghost", type: "button", "aria-label": "Cancel purchase" }, "Cancel");
+    cancelBtn.addEventListener("click", function () { close(false); });
+    confirmBtn.addEventListener("click", function () {
+      if (confirmBtn.disabled) return;
+      // defense-in-depth: disable synchronously on click; the real guard is buy()'s
+      // synchronous in-memory claim (see comment on buy()).
+      confirmBtn.disabled = true; cancelBtn.disabled = true;
+      buy(item.id).then(function (result) {
+        if (result.ok) {
+          close(true);
+          if (MA.app && MA.app.closeSheet) MA.app.closeSheet();
+          if (activeRefresh) activeRefresh();
+          if (MA.celebrate) MA.celebrate({ count: 130, y: (window.innerHeight || 800) * 0.4 });
+          if (MA.app && MA.app.toast) MA.app.toast(item.name + " purchased!");
+        } else if (result.reason === "funds") {
+          confirmBtn.disabled = false; cancelBtn.disabled = false;
+          var msg = "You need " + fmtMoney(result.shortfall) + " more";
+          errEl.textContent = msg;
+          if (MA.app && MA.app.toast) MA.app.toast(msg);
+        } else if (result.reason === "owned") {
+          close(true);
+          if (activeRefresh) activeRefresh();
+          if (MA.app && MA.app.toast) MA.app.toast("You already own this");
+        } else {
+          confirmBtn.disabled = false; cancelBtn.disabled = false;
+          if (MA.app && MA.app.toast) MA.app.toast("Couldn't complete purchase — try again");
+        }
+      }).catch(function () {
+        confirmBtn.disabled = false; cancelBtn.disabled = false;
+        if (MA.app && MA.app.toast) MA.app.toast("Couldn't complete purchase — try again");
+      });
+    });
+    card.appendChild(errEl);
+    card.appendChild(confirmBtn);
+    card.appendChild(cancelBtn);
+
+    document.addEventListener("keydown", onKeydown);
+    document.body.appendChild(overlay);
+    setTimeout(function () { var f = focusables(); if (f.length) f[0].focus(); }, 30);
+  }
+
+  /* ---------- 5-scene CSS gallery (seatac-mansion) ---------- */
+  function renderGallery(item) {
+    var scenes = item.gallery;
+    var idx = 0;
+    var stage = el("div", { class: "shop-gallery__stage " + TIER_ART_CLASS[item.tier] });
+    var big = el("div", { class: "shop-gallery__emoji", "aria-hidden": "true" });
+    stage.appendChild(big);
+    var label = el("div", { class: "shop-gallery__label", "aria-live": "polite" });
+    var dotsWrap = el("div", { class: "shop-gallery__dots", role: "group", "aria-label": item.name + " gallery scenes" });
+
+    function paint() {
+      big.textContent = scenes[idx].emoji;
+      label.textContent = scenes[idx].label;
+      Array.prototype.forEach.call(dotsWrap.children, function (d, di) {
+        d.setAttribute("aria-selected", di === idx ? "true" : "false");
+      });
+    }
+    scenes.forEach(function (s, i) {
+      var dot = el("button", { class: "shop-gallery__dot", type: "button", "aria-label": "View " + s.label + " scene", "aria-selected": i === 0 ? "true" : "false" });
+      dot.addEventListener("click", function () { idx = i; paint(); });
+      dotsWrap.appendChild(dot);
+    });
+    paint();
+    return el("div", { class: "shop-gallery" }, [stage, label, dotsWrap]);
+  }
+
+  /* ---------- detail sheet ---------- */
+  function openDetail(id) {
+    var item = byId(id);
+    if (!item) return;
+    var wrap = el("div", { class: "stack shop-detail" });
+    if (item.gallery && item.gallery.length) {
+      wrap.appendChild(renderGallery(item));
+    } else {
+      wrap.appendChild(el("div", { class: "shop-detail__art " + TIER_ART_CLASS[item.tier], "aria-hidden": "true", text: item.emoji }));
+    }
+    wrap.appendChild(el("h3", { text: item.name }));
+    wrap.appendChild(el("p", { class: "muted", text: item.blurb }));
+    wrap.appendChild(el("div", { class: "shop-detail__price", text: fmtMoney(item.usd) }));
+
+    if (isOwned(id)) {
+      wrap.appendChild(el("span", { class: "pill pill--accent", text: "Owned ✓" }));
+    } else {
+      var buyBtn = el("button", { class: "btn btn--primary btn--block", type: "button", "aria-label": "Buy " + item.name + " for " + fmtMoney(item.usd) }, "Buy — " + fmtMoney(item.usd));
+      buyBtn.addEventListener("click", function () {
+        if (buyBtn.disabled) return;
+        buyBtn.disabled = true;
+        openConfirm(item, function () { buyBtn.disabled = false; });
+      });
+      wrap.appendChild(buyBtn);
+    }
+    MA.app.openSheet(wrap);
+  }
+
+  /* ---------- card + grid ---------- */
+  function renderCard(item) {
+    var owned = isOwned(item.id);
+    var art = el("div", { class: "shop-card__art " + TIER_ART_CLASS[item.tier], "aria-hidden": "true", text: item.emoji });
+    var body = el("div", { class: "shop-card__body" }, [
+      el("div", { class: "shop-card__name", text: item.name }),
+      el("div", { class: "shop-card__price", text: fmtMoney(item.usd) })
+    ]);
+    var actionWrap = el("div", { class: "shop-card__action" });
+    if (owned) {
+      actionWrap.appendChild(el("span", { class: "pill pill--accent", text: "Owned ✓" }));
+    } else {
+      var buyBtn = el("button", { class: "btn btn--primary btn--sm btn--block", type: "button", "aria-label": "Buy " + item.name + " for " + fmtMoney(item.usd) }, "Buy");
+      buyBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (buyBtn.disabled) return;
+        buyBtn.disabled = true;
+        openConfirm(item, function () { buyBtn.disabled = false; });
+      });
+      actionWrap.appendChild(buyBtn);
+    }
+    var card = el("button", { type: "button", class: "shop-card", "aria-label": "View details for " + item.name }, [art, body, actionWrap]);
+    card.addEventListener("click", function (e) {
+      if (e.target.closest && e.target.closest(".shop-card__action")) return;
+      openDetail(item.id);
+    });
+    return card;
+  }
+
+  /* ---------- shop view ---------- */
+  var activeRefresh = null;
+  var currentFilter = "all";
+
+  function render() {
+    var wrap = el("div", { class: "stack shop-view" });
+
+    var walletAmt = el("span", { class: "wallet-amount", text: fmtMoney(MA.economy.getWallet()) });
+    var walletWrap = el("div", { class: "shop-wallet", "aria-label": "Study Coins balance" }, [
+      el("span", { "aria-hidden": "true", text: "🪙" }), walletAmt
+    ]);
+    var charBadge = el("span", { class: "shop-char-badge", hidden: true });
+    var header = el("div", { class: "shop-header row row--between" }, [walletWrap, charBadge]);
+    wrap.appendChild(header);
+
+    function updateCharBadge() {
+      var c = getCharacter();
+      if (c && CHAR_EMOJI[c]) {
+        charBadge.hidden = false;
+        charBadge.textContent = CHAR_EMOJI[c];
+        charBadge.setAttribute("aria-label", "Active character: " + c);
+      } else {
+        charBadge.hidden = true;
+      }
+    }
+    updateCharBadge();
+
+    var chipsWrap = el("div", { class: "shop-chips", role: "group", "aria-label": "Shop categories" });
+    var chipBtns = CHIPS.map(function (c) {
+      var btn = el("button", { class: "shop-chip", type: "button", "aria-label": c.label, "aria-pressed": (currentFilter === c.key) ? "true" : "false" }, c.label);
+      btn.addEventListener("click", function () {
+        currentFilter = c.key;
+        chipBtns.forEach(function (b, i) { b.setAttribute("aria-pressed", CHIPS[i].key === currentFilter ? "true" : "false"); });
+        refresh();
+      });
+      chipsWrap.appendChild(btn);
+      return btn;
+    });
+    wrap.appendChild(chipsWrap);
+
+    var gridWrap = el("div", { class: "shop-grid" });
+    wrap.appendChild(gridWrap);
+
+    function refresh() {
+      walletAmt.textContent = fmtMoney(MA.economy.getWallet());
+      var items = CATALOG.filter(function (it) {
+        if (currentFilter === "all") return true;
+        if (currentFilter === "owned") return isOwned(it.id);
+        return it.tier === currentFilter;
+      });
+      gridWrap.innerHTML = "";
+      if (!items.length) {
+        gridWrap.appendChild(el("div", { class: "empty" }, [
+          el("div", { class: "empty__emoji", text: "🛍️" }),
+          el("h3", { text: "Nothing here yet" }),
+          el("p", { class: "muted", text: currentFilter === "owned" ? "Items you buy will show up here." : "No items in this category." })
+        ]));
+        return;
+      }
+      items.forEach(function (it) { gridWrap.appendChild(renderCard(it)); });
+    }
+
+    ready.then(refresh);
+
+    function onCoins() { walletAmt.textContent = fmtMoney(MA.economy.getWallet()); }
+    function onChar() { updateCharBadge(); }
+    window.addEventListener("ma:coins", onCoins);
+    window.addEventListener("ma:character", onChar);
+    activeRefresh = refresh;
+    if (MA.app && MA.app.onLeave) MA.app.onLeave(function () {
+      window.removeEventListener("ma:coins", onCoins);
+      window.removeEventListener("ma:character", onChar);
+      if (activeRefresh === refresh) activeRefresh = null;
+    });
+
+    return wrap;
+  }
+
+  MA.shop = { catalog: CATALOG, render: render, isOwned: isOwned, openDetail: openDetail, ready: ready };
+})();
+
+</script>
 <script>
 /* ---- js/modules/flashcards.js ---- */
 /* flashcards.js — Quizlet-style decks with four study modes:
@@ -2597,12 +3121,12 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       var idx = 0, correct = 0;
       step();
 
-      function grade(card, knew) {
+      function grade(card, knew, anchor) {
         var rec = map[card.id] || { box: 1 };
         rec.box = knew ? Math.min(5, (rec.box || 1) + 1) : 1;
         rec.due = Date.now() + BOX_DAYS[rec.box] * 86400000;
         map[card.id] = rec;
-        if (knew) correct++;
+        if (knew) { correct++; MA.economy.earnCoins(5, "learn", anchor); }
         saveSrs(deckId, map);
         idx++; step();
       }
@@ -2624,12 +3148,13 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         flash.addEventListener("keydown", function (e) { if (e.key === " " || e.key === "Enter") { e.preventDefault(); reveal(); } });
         var graders = el("div", { class: "row", style: "gap:10px" }, [
           el("button", { class: "btn btn--danger btn--block", onclick: function () { grade(c, false); } }, "Still learning"),
-          el("button", { class: "btn btn--accent btn--block", onclick: function () { grade(c, true); } }, "Got it ✓")
+          el("button", { class: "btn btn--accent btn--block", onclick: function (e) { grade(c, true, e.currentTarget); } }, "Got it ✓")
         ]);
         body.appendChild(stage); body.appendChild(actions);
       }
       function done() {
         MA.app.bumpStreak();
+        MA.economy.earnCoins(40, "deck");
         return el("div", { class: "empty" }, [
           el("div", { class: "empty__emoji", text: "🎉" }),
           el("h3", { text: "Session complete" }),
@@ -2666,8 +3191,10 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         if (sel === cell) { sel.classList.remove("sel"); sel = null; return; }
         if (sel._t.id === t.id && sel._t.kind !== t.kind) {
           sel.classList.add("ok"); cell.classList.add("ok"); sel.classList.remove("sel"); sel = null; matched++;
+          MA.economy.earnCoins(4, "match", cell);
           if (matched === pick.length) {
             clearInterval(timer);
+            MA.economy.earnCoins(25, "match-clear");
             grid.after(el("div", { class: "empty" }, [
               el("div", { class: "empty__emoji", text: "⚡" }),
               el("h3", { text: "Matched in " + ((Date.now() - t0) / 1000).toFixed(1) + "s" }),
@@ -2708,7 +3235,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         b.addEventListener("click", function () {
           if (answered) return; answered = true;
           var ok = opt === c.def;
-          if (ok) { b.classList.add("correct"); score++; }
+          if (ok) { b.classList.add("correct"); score++; MA.economy.earnCoins(4, "test", b); }
           else { b.classList.add("wrong"); Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) { if (o.textContent === c.def) o.classList.add("correct"); }); }
           Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) { o.disabled = true; });
           body.appendChild(el("button", { class: "btn btn--primary btn--block", style: "margin-top:14px", onclick: function () { idx++; step(); } }, idx + 1 >= qs.length ? "See score" : "Next"));
@@ -2903,6 +3430,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       body.innerHTML = "";
       if (idx >= qs.length) {
         if (opts.onFinish) opts.onFinish(score, qs.length);
+        if (qs.length && score / qs.length >= 0.8) MA.economy.earnCoins(60, "quiz-bonus");
         body.appendChild(scoreCard(score, qs.length, opts.onBack || function () { MA.app.go("quiz"); }));
         return;
       }
@@ -2918,7 +3446,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         b.addEventListener("click", function () {
           if (answered) return; answered = true;
           var ok = choice === correctText;
-          if (ok) { b.classList.add("correct"); score++; }
+          if (ok) { b.classList.add("correct"); score++; MA.economy.earnCoins(12, "quiz", b); }
           else {
             b.classList.add("wrong");
             Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) { if (o.textContent === correctText) o.classList.add("correct"); });
@@ -2988,6 +3516,8 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       }), "Weekly Quiz");
     }
 
+    if (MA.quizBuilder) wrap.appendChild(MA.quizBuilder.render());
+
     wrap.appendChild(el("div", { class: "section-title", text: "Quiz by subject" }));
     var list = el("div", { class: "list" });
     banks().forEach(function (b) {
@@ -3010,7 +3540,161 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     return runBank(b, { onBack: function () { MA.app.go("quiz"); }, onFinish: function () { MA.app.bumpStreak(); } });
   }
 
-  MA.quiz = { title: "Quizzes", scoreCard: scoreCard, renderHub: renderHub, renderBank: renderBank, weeklyBank: weeklyBank };
+  /* Seam for MA.quizBuilder: run an ad-hoc set of questions through this same
+     runner, so scoring and the earn hooks inside runBank apply to custom quizzes
+     exactly as they do to the weekly and by-subject ones. */
+  function runQuestions(questions, opts) {
+    return runBank({ id: "custom", title: "Custom Quiz", subject: "Custom", questions: questions }, opts);
+  }
+
+  MA.quiz = { title: "Quizzes", scoreCard: scoreCard, renderHub: renderHub, renderBank: renderBank, weeklyBank: weeklyBank, runQuestions: runQuestions };
+})();
+
+</script>
+<script>
+/* ---- js/modules/quiz-builder.js ---- */
+/* quiz-builder.js — "Build Your Quiz": one slider per question bank with a live
+   payout readout, then runs the chosen mix through the normal quiz engine
+   (MA.quiz.runQuestions) so scoring and the per-correct / >=80% earn hooks apply
+   exactly as they do to the weekly quiz. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var PER_CORRECT = 12;
+  var BONUS = 60;
+
+  function banks() { return (window.MA_DATA && MA_DATA.quizzes) || []; }
+  function mult() { return (MA.economy && MA.economy.effectiveMultiplier()) || 1; }
+  function fmtMoney(n) {
+    n = Math.round(n) || 0;
+    return "$" + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  injectStyle();
+
+  function render() {
+    var wrap = el("div", { class: "card stack qb" });
+    wrap.appendChild(el("div", { class: "row row--between" }, [
+      el("h3", { text: "🎚️ Build Your Quiz" }),
+      el("span", { class: "pill", id: "qbMult", text: "×" + mult() })
+    ]));
+    wrap.appendChild(el("p", { class: "muted", text: "Pick how many questions from each section. Payouts update as you go." }));
+
+    var counts = {};
+    var rows = [];
+    var list = el("div", { class: "qb-list" });
+
+    banks().forEach(function (b) {
+      var max = b.questions.length;
+      counts[b.id] = 0;
+      var payout = el("span", { class: "qb-row__payout", text: fmtMoney(0) });
+      var countLabel = el("span", { class: "qb-row__count", text: "0 / " + max });
+      var input = el("input", {
+        type: "range", min: "0", max: String(max), value: "0", step: "1",
+        class: "qb-range", "aria-label": b.title + " question count"
+      });
+      input.addEventListener("input", function () {
+        counts[b.id] = parseInt(input.value, 10) || 0;
+        refresh();
+      });
+      var row = el("div", { class: "qb-row" }, [
+        el("div", { class: "qb-row__head row row--between" }, [
+          el("span", { class: "qb-row__name", text: (b.emoji || "❓") + " " + b.title }),
+          countLabel
+        ]),
+        input,
+        el("div", { class: "qb-row__foot row row--between" }, [
+          el("span", { class: "muted", text: "up to" }), payout
+        ])
+      ]);
+      list.appendChild(row);
+      rows.push({ bank: b, input: input, payout: payout, countLabel: countLabel, max: max });
+    });
+    wrap.appendChild(list);
+
+    var totalEl = el("strong", { class: "qb-total__value", text: fmtMoney(0) });
+    var bonusEl = el("div", { class: "muted qb-bonus", text: "" });
+    wrap.appendChild(el("div", { class: "qb-total stack" }, [
+      el("div", { class: "row row--between" }, [el("span", { text: "Potential earnings" }), totalEl]),
+      bonusEl
+    ]));
+
+    var startBtn = el("button", { class: "btn btn--primary btn--block", type: "button", disabled: true }, "Start quiz");
+    startBtn.addEventListener("click", function () { start(counts); });
+    wrap.appendChild(startBtn);
+
+    function refresh() {
+      var m = mult(), total = 0, picked = 0;
+      rows.forEach(function (r) {
+        var n = parseInt(r.input.value, 10) || 0;
+        counts[r.bank.id] = n;
+        picked += n;
+        var pay = Math.round(n * PER_CORRECT * m);
+        total += pay;
+        r.payout.textContent = fmtMoney(pay);
+        r.countLabel.textContent = n + " / " + r.max;
+      });
+      totalEl.textContent = fmtMoney(total);
+      bonusEl.textContent = "Score 80% or higher for a " + fmtMoney(BONUS * m) + " bonus";
+      var multPill = wrap.querySelector("#qbMult");
+      if (multPill) multPill.textContent = "×" + m;
+      startBtn.disabled = picked === 0;
+      startBtn.textContent = picked ? "Start " + picked + "-question quiz" : "Start quiz";
+    }
+    refresh();
+
+    function onEconomy() { refresh(); }
+    window.addEventListener("ma:coins", onEconomy);
+    window.addEventListener("ma:login", onEconomy);
+    window.addEventListener("ma:character", onEconomy);
+    if (MA.app && MA.app.onLeave) MA.app.onLeave(function () {
+      window.removeEventListener("ma:coins", onEconomy);
+      window.removeEventListener("ma:login", onEconomy);
+      window.removeEventListener("ma:character", onEconomy);
+    });
+
+    return wrap;
+  }
+
+  /* counts: { <bankId>: n }. Draws n questions from each bank and runs the mix
+     through the shared quiz engine. */
+  function start(counts) {
+    var seed = U.uid();
+    var questions = [];
+    banks().forEach(function (b) {
+      var n = Math.max(0, Math.min(parseInt(counts[b.id], 10) || 0, b.questions.length));
+      if (n) questions = questions.concat(U.shuffle(b.questions, seed + b.id).slice(0, n));
+    });
+    if (!questions.length) { MA.app.toast("Pick at least one question."); return; }
+    questions = U.shuffle(questions, seed);
+    MA.app.setView(MA.quiz.runQuestions(questions, {
+      seed: seed,
+      title: "Custom Quiz",
+      onBack: function () { MA.app.go("quiz"); },
+      onFinish: function () { MA.app.bumpStreak(); }
+    }), "Custom Quiz");
+  }
+
+  function injectStyle() {
+    var css =
+      ".qb-list{display:flex;flex-direction:column;gap:14px;margin-top:4px}" +
+      ".qb-row{display:flex;flex-direction:column;gap:6px}" +
+      ".qb-row__name{font-weight:700;font-size:var(--fs-sm)}" +
+      ".qb-row__count{color:var(--muted-fg);font-size:var(--fs-xs);font-variant-numeric:tabular-nums}" +
+      ".qb-row__payout{font-weight:800;color:var(--success);font-variant-numeric:tabular-nums}" +
+      ".qb-row__foot{font-size:var(--fs-xs)}" +
+      ".qb-range{width:100%;accent-color:var(--primary);height:26px}" +
+      ".qb-range:focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:6px}" +
+      ".qb-total{border-top:1px solid var(--border);padding-top:12px;margin-top:4px;font-size:var(--fs-sm)}" +
+      ".qb-total__value{font-size:var(--fs-lg);color:var(--success);font-variant-numeric:tabular-nums}" +
+      ".qb-bonus{font-size:var(--fs-xs)}";
+    var s = document.createElement("style");
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  MA.quizBuilder = { render: render, start: start };
 })();
 
 </script>
@@ -3405,12 +4089,15 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       wrap.appendChild(stage);
       var partInfo = el("div", { id: "v3dPart", class: "card muted", style: "margin-top:10px;font-size:var(--fs-sm)", text: "Tap a labeled part to see what it is." });
       wrap.appendChild(partInfo);
+      var quizBtn = MA.anatomyQuiz && MA.anatomyQuiz.entryButton(topic.id);
+      if (quizBtn) wrap.appendChild(quizBtn);
     } else {
       // info tab
       var info = el("div", { class: "card", style: "margin-top:4px" }, [
         el("p", { class: "muted", text: topic.blurb }),
         el("div", { id: "v3dPart", class: "muted", style: "display:none" }),
-        topic.deck ? el("button", { class: "btn btn--accent btn--block", style: "margin-top:14px", onclick: function () { MA.app.go("study/" + topic.deck); } }, "📑 Study related flashcards") : null
+        topic.deck ? el("button", { class: "btn btn--accent btn--block", style: "margin-top:14px", onclick: function () { MA.app.go("study/" + topic.deck); } }, "📑 Study related flashcards") : null,
+        (MA.anatomyQuiz && MA.anatomyQuiz.entryButton(topic.id)) || null
       ]);
       wrap.appendChild(info);
       var strip = MA.diagrams && MA.diagrams.relatedStrip(MA.diagrams.TOPIC_SYS[topic.id]);
@@ -3682,6 +4369,142 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
 
   MA.viewer3d = { title: "Anatomy 3D", render: render };
+})();
+
+</script>
+<script>
+/* ---- js/modules/anatomy-quiz.js ---- */
+/* anatomy-quiz.js — "Identify the Part": a short multiple-choice quiz per anatomy
+   topic, built from the cards of the topic's linked flashcard deck. The card's
+   definition is the prompt; the options are that card's term plus three
+   distractor terms from the same deck. Correct answers earn coins through
+   MA.economy.earnCoins, so the streak x character multiplier applies. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util, el = U.el;
+
+  var MAX_Q = 8;
+  var MIN_CARDS = 4;
+
+  function topics() { return (window.MA_DATA && MA_DATA.topics) || []; }
+  function decks() { return (window.MA_DATA && MA_DATA.decks) || []; }
+  function topicById(id) { return topics().filter(function (t) { return t.id === id; })[0]; }
+  function deckById(id) { return decks().filter(function (d) { return d.id === id; })[0]; }
+
+  /* Cards usable as questions: need both a term and a definition. */
+  function usableCards(topic) {
+    if (!topic || !topic.deck) return [];
+    var deck = deckById(topic.deck);
+    if (!deck || !deck.cards) return [];
+    return deck.cards.filter(function (c) { return c && c.term && c.def; });
+  }
+
+  function isAvailable(topicId) { return usableCards(topicById(topicId)).length >= MIN_CARDS; }
+
+  /* Most decks mix two card shapes: some terms are already phrased as questions
+     ("What plane divides…?" / "Frontal plane"), the rest are label-and-description
+     ("Tricuspid valve" / "Valve between…"). Ask each card from whichever side reads
+     as the prompt, and draw distractors from the same pool so the four options are
+     always the same kind of thing. */
+  function isAsked(card) { return /\?\s*$/.test(card.term); }
+  function promptOf(card) { return isAsked(card) ? card.term : card.def; }
+  function answerOf(card) { return isAsked(card) ? card.def : card.term; }
+
+  /* Build the question list. Seeded per topic so a reload gives the same quiz. */
+  function buildQuestions(topic) {
+    var cards = usableCards(topic);
+    if (cards.length < MIN_CARDS) return [];
+    var asked = cards.filter(isAsked), labelled = cards.filter(function (c) { return !isAsked(c); });
+    var picked = U.shuffle(cards, topic.id).slice(0, Math.min(MAX_Q, cards.length));
+    return picked.map(function (card, i) {
+      var pool = isAsked(card) ? asked : labelled;
+      var answer = answerOf(card);
+      var others = pool.filter(function (c) { return answerOf(c) !== answer; });
+      // a pool too small for 3 distractors falls back to the full deck
+      if (others.length < 3) others = cards.filter(function (c) { return answerOf(c) !== answer; });
+      var distractors = U.shuffle(others, topic.id + ":" + i).slice(0, 3).map(answerOf);
+      return {
+        prompt: promptOf(card),
+        answer: answer,
+        choices: U.shuffle([answer].concat(distractors), topic.id + ":opt:" + i)
+      };
+    });
+  }
+
+  function start(topicId) {
+    var topic = topicById(topicId);
+    if (!topic) { MA.app.toast("Topic not found."); return; }
+    var qs = buildQuestions(topic);
+    if (!qs.length) { MA.app.toast("Not enough cards for a quiz yet."); return; }
+    MA.app.setView(renderQuiz(topic, qs), "Identify the Part");
+  }
+
+  function renderQuiz(topic, qs) {
+    var wrap = el("div", { class: "stack" });
+    wrap.appendChild(el("div", { class: "hero" }, [
+      el("div", { class: "pill", text: (topic.emoji || "🫀") + " " + topic.name }),
+      el("h2", { text: "Identify the Part" }),
+      el("div", { class: "muted", text: qs.length + " questions · +8 🪙 each" })
+    ]));
+    var body = el("div");
+    wrap.appendChild(body);
+
+    var idx = 0, score = 0;
+    step();
+
+    function step() {
+      body.innerHTML = "";
+      if (idx >= qs.length) { finish(); return; }
+      var q = qs[idx];
+      body.appendChild(el("div", { class: "muted center", text: (idx + 1) + " / " + qs.length }));
+      body.appendChild(el("div", { class: "card" }, [el("h3", { text: q.prompt })]));
+      var answered = false;
+      q.choices.forEach(function (choice) {
+        var b = el("button", { class: "opt", text: choice });
+        b.addEventListener("click", function () {
+          if (answered) return; answered = true;
+          var ok = choice === q.answer;
+          if (ok) {
+            b.classList.add("correct");
+            score++;
+            MA.economy.earnCoins(8, "anatomy", b);
+          } else {
+            b.classList.add("wrong");
+            Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) {
+              if (o.textContent === q.answer) o.classList.add("correct");
+            });
+          }
+          Array.prototype.forEach.call(body.querySelectorAll(".opt"), function (o) { o.disabled = true; });
+          body.appendChild(el("button", {
+            class: "btn btn--primary btn--block", style: "margin-top:14px",
+            onclick: function () { idx++; step(); }
+          }, idx + 1 >= qs.length ? "See score" : "Next question"));
+        });
+        body.appendChild(b);
+      });
+    }
+
+    function finish() {
+      MA.economy.earnCoins(30, "anatomy-done");
+      if (MA.celebrate && score / qs.length >= 0.8) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
+      body.appendChild(MA.quiz.scoreCard(score, qs.length, function () { MA.app.go("anatomy/" + topic.id); }));
+    }
+
+    return wrap;
+  }
+
+  /* Entry button mounted by the anatomy topic view. Returns null when the
+     topic's deck is too small to build a 4-option question. */
+  function entryButton(topicId) {
+    if (!isAvailable(topicId)) return null;
+    return el("button", {
+      class: "btn btn--accent btn--block", style: "margin-top:10px",
+      "aria-label": "Start the Identify the Part quiz",
+      onclick: function () { start(topicId); }
+    }, "🔎 Identify the Part");
+  }
+
+  MA.anatomyQuiz = { start: start, entryButton: entryButton, isAvailable: isAvailable, buildQuestions: buildQuestions };
 })();
 
 </script>
@@ -3994,7 +4817,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   }
 
   /* ---------- router ---------- */
-  var TABS = { home: 1, study: 1, anatomy: 1, notes: 1 };
+  var TABS = { home: 1, study: 1, anatomy: 1, shop: 1, notes: 1 };
   function go(route) { var target = "#/" + route; if (location.hash === target) handle(); else location.hash = target; }
   window.addEventListener("hashchange", handle);
 
@@ -4024,6 +4847,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         case "calendar": node = MA.calendar.render(); title = "Calendar"; showBack = true; break;
         case "facts": node = MA.facts.render(); title = "Fun Facts"; showBack = true; break;
         case "library": node = MA.library.render(seg.slice(1).join("/")); title = "Library"; showBack = true; break;
+        case "shop": node = MA.shop.render(); title = "Shop"; break;
         case "settings": node = MA.settings.render(); title = "Settings"; showBack = true; break;
         default: node = renderHome(); title = "MA Study"; base = "home";
       }
@@ -4053,12 +4877,12 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     var r = btn.dataset.route;
     if (r === "more") openMore(); else go(r);
   });
-  document.getElementById("navSettings").addEventListener("click", function () { go("settings"); });
+  document.getElementById("navSettings").addEventListener("click", openMore);
 
   /* ---------- "More" menu ---------- */
   function openMore() {
     var items = [
-      { r: "quiz", e: "❓", n: "Quizzes", s: "Weekly quiz & subject quizzes" },
+      { r: "quiz", e: "❓", n: "Quizzes", s: "Build your own, weekly & by subject" },
       { r: "calendar", e: "🗓️", n: "Calendar", s: "Your exams & TEAS date" },
       { r: "library", e: "📚", n: "Library & BSN/TEAS", s: "Reference docs & pathway" },
       { r: "facts", e: "💡", n: "Fun Facts", s: "Bite-size knowledge" },
@@ -4076,6 +4900,112 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     });
     box.appendChild(list);
     openSheet(box);
+  }
+
+  /* ---------- home: study-economy panel ----------
+     Character banner, daily streak + live earning multiplier, coin summary with
+     the next purchase goal, a featured item that rotates once per ISO week, and
+     a shortcut into the Shop. Everything refreshes on ma:coins / ma:login /
+     ma:character rather than on a re-render. */
+  function fmtCoins(n) {
+    n = Math.round(n) || 0;
+    return "$" + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function renderEconomyPanel() {
+    var panel = el("div", { class: "card stack home-econ" });
+
+    var charLine = el("div", { class: "home-econ__char muted" });
+    var multBadge = el("span", { class: "pill pill--accent", id: "homeMult", text: "Earning ×1" });
+    panel.appendChild(el("div", { class: "row row--between" }, [charLine, multBadge]));
+
+    var streakSlot = el("div", { class: "home-econ__streak" });
+    panel.appendChild(streakSlot);
+    if (MA.daily && MA.daily.renderWidget) streakSlot.appendChild(MA.daily.renderWidget());
+
+    var balEl = el("strong", { class: "home-econ__stat-value", text: fmtCoins(0) });
+    var todayEl = el("strong", { class: "home-econ__stat-value", text: fmtCoins(0) });
+    panel.appendChild(el("div", { class: "home-econ__stats" }, [
+      el("div", { class: "home-econ__stat" }, [el("span", { class: "muted", text: "Balance" }), balEl]),
+      el("div", { class: "home-econ__stat" }, [el("span", { class: "muted", text: "Earned today" }), todayEl])
+    ]));
+
+    var goalEl = el("div", { class: "home-econ__goal muted" });
+    panel.appendChild(goalEl);
+
+    var featuredSlot = el("div");
+    panel.appendChild(featuredSlot);
+
+    panel.appendChild(el("button", {
+      class: "btn btn--primary btn--block", type: "button",
+      onclick: function () { go("shop"); }
+    }, "🛍️ Open Shop"));
+
+    /* Deterministic per ISO week so it is stable offline and across reloads. */
+    function featuredItem() {
+      var cat = (MA.shop && MA.shop.catalog) || [];
+      if (!cat.length) return null;
+      return U.shuffle(cat, "featured:" + U.weekKey())[0];
+    }
+
+    /* Cheapest thing not yet owned and not yet affordable — what to save toward. */
+    function nextGoal(wallet) {
+      var cat = (MA.shop && MA.shop.catalog) || [];
+      var pool = cat.filter(function (i) { return !MA.shop.isOwned(i.id) && i.usd > wallet; })
+        .sort(function (a, b) { return a.usd - b.usd; });
+      return pool[0] || null;
+    }
+
+    function refresh() {
+      var wallet = MA.economy.getWallet();
+      balEl.textContent = fmtCoins(wallet);
+      todayEl.textContent = fmtCoins(MA.economy.getEarnedToday());
+      multBadge.textContent = "Earning ×" + MA.economy.effectiveMultiplier();
+
+      var cid = MA.characters && MA.characters.getCharacter();
+      var def = cid && MA.characters.list().filter(function (c) { return c.id === cid; })[0];
+      charLine.textContent = def ? def.emoji + " Studying as " + def.name : "No character picked yet";
+
+      var goal = nextGoal(wallet);
+      goalEl.textContent = goal
+        ? "Next goal: " + goal.emoji + " " + goal.name + " — " + fmtCoins(goal.usd - wallet) + " to go"
+        : "You can afford everything left in the shop 🎉";
+
+      featuredSlot.innerHTML = "";
+      var f = featuredItem();
+      if (f) {
+        featuredSlot.appendChild(el("button", {
+          class: "home-econ__featured", type: "button",
+          "aria-label": "Featured this week: " + f.name + ", " + fmtCoins(f.usd),
+          onclick: function () { go("shop"); }
+        }, [
+          el("span", { class: "home-econ__featured-emoji", "aria-hidden": "true", text: f.emoji }),
+          el("span", { class: "home-econ__featured-body" }, [
+            el("span", { class: "home-econ__featured-label", text: "Featured this week" }),
+            el("span", { class: "home-econ__featured-name", text: f.name })
+          ]),
+          el("span", { class: "home-econ__featured-price", text: fmtCoins(f.usd) })
+        ]));
+      }
+    }
+
+    Promise.all([
+      MA.economy.ready,
+      MA.characters ? MA.characters.ready : Promise.resolve(),
+      MA.shop ? MA.shop.ready : Promise.resolve()
+    ]).then(refresh);
+    refresh();
+
+    window.addEventListener("ma:coins", refresh);
+    window.addEventListener("ma:login", refresh);
+    window.addEventListener("ma:character", refresh);
+    onLeave(function () {
+      window.removeEventListener("ma:coins", refresh);
+      window.removeEventListener("ma:login", refresh);
+      window.removeEventListener("ma:character", refresh);
+    });
+
+    return panel;
   }
 
   /* ---------- home dashboard ---------- */
@@ -4107,6 +5037,8 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     ]);
     wrap.appendChild(hero);
     MA.store.getKV("streak", { count: 0 }).then(function (s) { var n = document.getElementById("homeStreak"); if (n) n.textContent = "🔥 " + (s.count || 0); });
+
+    wrap.appendChild(renderEconomyPanel());
 
     // ---- progress diagrams (computed from Leitner SRS state) ----
     var progSlot = el("div");
