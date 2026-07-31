@@ -4,7 +4,7 @@
    else so the app keeps working offline. Bump CACHE when the shell changes. */
 "use strict";
 
-var CACHE = "ma-study-v2";
+var CACHE = "ma-study-v3";
 var CORE = [
   "./",
   "index.html",
