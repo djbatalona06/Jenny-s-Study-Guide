@@ -3162,7 +3162,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         body.appendChild(stage); body.appendChild(actions);
       }
       function done() {
-        MA.app.bumpStreak();
+        MA.app.bumpStreak("deck");
         MA.economy.earnCoins(40, "deck");
         return el("div", { class: "empty" }, [
           el("div", { class: "empty__emoji", text: "🎉" }),
@@ -3203,6 +3203,9 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
           MA.economy.earnCoins(4, "match", cell);
           if (matched === pick.length) {
             clearInterval(timer);
+            // Clearing the board finishes a session like any other. This was the
+            // one completion path that never touched the streak.
+            MA.app.bumpStreak("match");
             MA.economy.earnCoins(25, "match-clear");
             grid.after(el("div", { class: "empty" }, [
               el("div", { class: "empty__emoji", text: "⚡" }),
@@ -3232,7 +3235,13 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     step();
     function step() {
       body.innerHTML = "";
-      if (idx >= qs.length) { body.appendChild(MA.quiz.scoreCard(score, qs.length, function () { MA.app.go("study/" + deckId); })); return; }
+      if (idx >= qs.length) {
+        // Test mode finishes here rather than through a shared onFinish, which
+        // is why it never counted towards the streak. It does now.
+        MA.app.bumpStreak("quiz");
+        body.appendChild(MA.quiz.scoreCard(score, qs.length, function () { MA.app.go("study/" + deckId); }));
+        return;
+      }
       var c = qs[idx];
       var distract = U.shuffle(d.cards.filter(function (x) { return x.id !== c.id; })).slice(0, 3).map(function (x) { return x.def; });
       var options = U.shuffle([c.def].concat(distract));
@@ -3520,7 +3529,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         seed: wk, title: "Weekly Quiz", onBack: function () { MA.app.go("quiz"); },
         onFinish: function (s, t) {
           MA.store.getKV("weeklyDone", {}).then(function (d) { d[wk] = { score: s, total: t }; MA.store.setKV("weeklyDone", d); });
-          MA.app.bumpStreak();
+          MA.app.bumpStreak("weekly");
         }
       }), "Weekly Quiz");
     }
@@ -3546,7 +3555,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   function renderBank(id) {
     var b = bankById(id);
     if (!b) return el("div", { class: "empty" }, "Quiz not found.");
-    return runBank(b, { onBack: function () { MA.app.go("quiz"); }, onFinish: function () { MA.app.bumpStreak(); } });
+    return runBank(b, { onBack: function () { MA.app.go("quiz"); }, onFinish: function () { MA.app.bumpStreak("quiz"); } });
   }
 
   /* Seam for MA.quizBuilder: run an ad-hoc set of questions through this same
@@ -3681,7 +3690,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       seed: seed,
       title: "Custom Quiz",
       onBack: function () { MA.app.go("quiz"); },
-      onFinish: function () { MA.app.bumpStreak(); }
+      onFinish: function () { MA.app.bumpStreak("quiz"); }
     }), "Custom Quiz");
   }
 
@@ -4503,6 +4512,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     }
 
     function finish() {
+      MA.app.bumpStreak("anatomy");
       MA.economy.earnCoins(30, "anatomy-done");
       if (MA.celebrate && score / qs.length >= 0.8) MA.celebrate({ count: 90, y: (window.innerHeight || 800) * 0.4 });
       body.appendChild(MA.quiz.scoreCard(score, qs.length, function () { MA.app.go("anatomy/" + topic.id); }));
@@ -4672,6 +4682,71 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     }
 
     // data controls
+    /* HeartBeat — the shared pet.
+
+       Off unless a code is pasted in. This app is otherwise airgapped and stays
+       that way by default; nothing is sent until there is a code here, and
+       clearing the field stops it again. What goes out is which kind of thing
+       was finished and when — never a card, a score, or a note. */
+    wrap.appendChild(el("div", { class: "section-title", text: "HeartBeat" }));
+    var hbCard = el("div", { class: "card stack" });
+    wrap.appendChild(hbCard);
+    hbCard.appendChild(el("div", {
+      class: "muted",
+      text: "Finish a deck or a quiz and the pet you share gains XP. Get a code from HeartBeat → Settings → Study app."
+    }));
+
+    var hbInput = el("input", {
+      class: "input",
+      type: "password",
+      autocomplete: "off",
+      spellcheck: "false",
+      placeholder: "Paste your code",
+      "aria-label": "HeartBeat code"
+    });
+    var hbState = el("div", { class: "muted", text: "Not connected." });
+    hbCard.appendChild(hbInput);
+    hbCard.appendChild(hbState);
+
+    function hbRefresh() {
+      if (!MA.heartbeat) { hbState.textContent = "Not available in this build."; return; }
+      Promise.all([MA.heartbeat.config(), MA.heartbeat.pending()]).then(function (r) {
+        if (!r[0]) { hbState.textContent = "Not connected."; return; }
+        hbState.textContent = r[1]
+          ? "Connected — " + r[1] + " session" + (r[1] === 1 ? "" : "s") + " waiting to send."
+          : "Connected.";
+      });
+    }
+    hbRefresh();
+
+    hbCard.appendChild(el("div", { class: "row" }, [
+      (function () {
+        var save = el("button", { class: "btn btn--primary", text: "Connect" });
+        save.addEventListener("click", function () {
+          if (!MA.heartbeat) return;
+          var code = hbInput.value.trim();
+          if (!code) { MA.app.toast("Paste the code first"); return; }
+          MA.heartbeat.save(code).then(function () {
+            /* Cleared once it is stored: leaving a credential sitting in a
+               visible field is worse than making a new one if it is lost. */
+            hbInput.value = "";
+            MA.app.toast("Connected");
+            /* Send anything that piled up while it was disconnected. */
+            return MA.heartbeat.drain();
+          }).then(hbRefresh);
+        });
+        return save;
+      })(),
+      (function () {
+        var off = el("button", { class: "btn btn--ghost", text: "Disconnect" });
+        off.addEventListener("click", function () {
+          if (!MA.heartbeat) return;
+          MA.heartbeat.save("").then(function () { MA.app.toast("Disconnected"); }).then(hbRefresh);
+        });
+        return off;
+      })()
+    ]));
+
     wrap.appendChild(el("div", { class: "section-title", text: "Your data" }));
     var data = el("div", { class: "card stack" });
     data.appendChild(el("p", { class: "muted", text: "Everything you create stays on this device. Back it up or clear it here." }));
@@ -4785,6 +4860,142 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
 
 </script>
 <script>
+/* ---- js/modules/heartbeat.js ---- */
+/* heartbeat.js — send a finished session to HeartBeat so the shared pet gains XP.
+
+   This is the only thing in this app that talks to a network. Everything else
+   is deliberately airgapped ("nothing leaves the device", store.js), and that
+   stays true by default: without a code pasted in Settings, this module does
+   nothing at all and never makes a request.
+
+   What goes out is three fields — a random session id, which kind of thing was
+   finished, and when. No card, no score, no note, no name. HeartBeat turns that
+   into XP for a pet the two of them share; it learns nothing about what was
+   studied.
+
+   Sending is queued rather than awaited. Finishing a deck must not wait on a
+   network, and a session finished on a bus with no signal should still count
+   when there is signal again — so the session goes into IndexedDB first and the
+   queue is drained on load and after each send. */
+(function () {
+  "use strict";
+  var MA = window.MA, U = MA.util;
+
+  var SETTING = "heartbeat";          // { url, token }
+  var QUEUE = "heartbeat:queue";      // [{ sessionId, kind, at }]
+
+  /* A queue is a safety net, not a log. Past this many the oldest go: a phone
+     that has been offline for a month should send its recent sessions, not
+     spend a minute replaying a hundred of them. */
+  var MAX_QUEUED = 50;
+
+  var DEFAULT_URL = "https://heartbeat-eop.pages.dev/api/study/session";
+
+  /* The kinds HeartBeat knows. Anything else is refused there, so it is refused
+     here rather than queued forever. */
+  var KINDS = { deck: 1, quiz: 1, weekly: 1, match: 1, anatomy: 1 };
+
+  var draining = false;
+
+  function config() {
+    return MA.store.getKV(SETTING, null).then(function (c) {
+      if (!c || !c.token) return null;
+      return { url: c.url || DEFAULT_URL, token: c.token };
+    });
+  }
+
+  function save(token, url) {
+    var trimmed = (token || "").trim();
+    if (!trimmed) return MA.store.setKV(SETTING, null);
+    return MA.store.setKV(SETTING, { token: trimmed, url: (url || DEFAULT_URL).trim() });
+  }
+
+  /* Minted once per finished session and kept until the send is acknowledged.
+     HeartBeat names its award after this, and deduplicates on it — so a retry
+     has to reuse the id rather than make a new one, or the pet is paid twice
+     for one session. */
+  function sessionId() {
+    return "s" + U.uid();
+  }
+
+  function record(kind) {
+    if (!KINDS[kind]) return Promise.resolve(false);
+    return config().then(function (c) {
+      if (!c) return false;   // not connected; stay airgapped
+      return MA.store.getKV(QUEUE, []).then(function (queue) {
+        queue = Array.isArray(queue) ? queue : [];
+        queue.push({ sessionId: sessionId(), kind: kind, at: Date.now() });
+        if (queue.length > MAX_QUEUED) queue = queue.slice(-MAX_QUEUED);
+        return MA.store.setKV(QUEUE, queue).then(function () { return drain(); });
+      });
+    }).catch(function () { return false; });
+  }
+
+  function send(c, item) {
+    return fetch(c.url, {
+      method: "POST",
+      keepalive: true,
+      headers: { "content-type": "application/json", authorization: "Bearer " + c.token },
+      body: JSON.stringify({ sessionId: item.sessionId, kind: item.kind, at: item.at })
+    }).then(function (res) {
+      /* 2xx is done. So is 4xx that is not 401: a malformed or unknown-kind
+         session will never succeed, and keeping it would block the queue
+         forever. A 401 is a code that was revoked or mistyped — keep those, so
+         reconnecting sends what was missed. 5xx and a thrown fetch are both
+         "try later". */
+      if (res.ok) return true;
+      if (res.status === 401) return false;
+      return res.status < 500;
+    }).catch(function () { return false; });
+  }
+
+  function drain() {
+    if (draining) return Promise.resolve(false);
+    draining = true;
+    return config().then(function (c) {
+      if (!c) return false;
+      return MA.store.getKV(QUEUE, []).then(function (queue) {
+        queue = Array.isArray(queue) ? queue : [];
+        if (!queue.length) return false;
+
+        /* One at a time and stop at the first failure: if the network is down
+           the second request will fail too, and a phone on a bad connection
+           should not open fifty of them. */
+        function step(i) {
+          if (i >= queue.length) return Promise.resolve(i);
+          return send(c, queue[i]).then(function (ok) {
+            return ok ? step(i + 1) : i;
+          });
+        }
+
+        return step(0).then(function (sent) {
+          if (!sent) return false;
+          return MA.store.setKV(QUEUE, queue.slice(sent)).then(function () { return true; });
+        });
+      });
+    }).catch(function () { return false; })
+      .then(function (r) { draining = false; return r; });
+  }
+
+  function pending() {
+    return MA.store.getKV(QUEUE, []).then(function (q) { return Array.isArray(q) ? q.length : 0; });
+  }
+
+  MA.heartbeat = {
+    record: record,
+    drain: drain,
+    config: config,
+    save: save,
+    pending: pending,
+    DEFAULT_URL: DEFAULT_URL
+  };
+
+  /* Anything queued from a previous visit goes out as soon as there is a page
+     and a network, without waiting for the next finished session. */
+  window.addEventListener("load", function () { drain(); });
+  window.addEventListener("online", function () { drain(); });
+})();
+
 /* ---- js/app.js ---- */
 /* app.js — shell, hash router, home dashboard, and shared services
    (toast, bottom sheet, streak, view lifecycle). */
@@ -4821,7 +5032,13 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
 
   /* ---------- streak ---------- */
   function todayStr() { return new Date().toISOString().slice(0, 10); }
-  function bumpStreak() {
+  function bumpStreak(kind) {
+    /* `kind` says what was finished — a deck, a quiz, a match board. It is new:
+       this used to take nothing at all, so the streak knew a session had
+       happened but not what it was. HeartBeat needs to know, because finishing
+       one card is not worth what finishing a deck is worth. Omitted, it still
+       counts the streak and simply sends nothing. */
+    if (kind && MA.heartbeat) MA.heartbeat.record(kind);
     return MA.store.getKV("streak", { count: 0, last: null }).then(function (s) {
       var t = todayStr();
       // log study activity for the weekly chart (counts every completed session)
