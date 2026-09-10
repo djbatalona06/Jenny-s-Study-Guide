@@ -4105,7 +4105,7 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         mountProc(stage, topic);
       }
       wrap.appendChild(stage);
-      var partInfo = el("div", { id: "v3dPart", class: "card muted", style: "margin-top:10px;font-size:var(--fs-sm)", text: "Tap a labeled part to see what it is." });
+      var partInfo = el("div", { id: "v3dPart", class: "card muted", style: "margin-top:10px;font-size:var(--fs-sm)", text: "Hover a part to name it, or tap to keep it here." });
       wrap.appendChild(partInfo);
       var quizBtn = MA.anatomyQuiz && MA.anatomyQuiz.entryButton(topic.id);
       if (quizBtn) wrap.appendChild(quizBtn);
@@ -4131,8 +4131,35 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     var scene = el("div", { class: "v3d__scene" });
     stage.appendChild(scene);
     stage.appendChild(el("div", { class: "viewer__hint", text: "Drag to rotate · pinch/scroll to zoom · tap a label" }));
-    buildModel(scene, topic);
+    var parts = buildModel(scene, topic);
+    procLegend(stage, parts);
     enableControls(stage, scene);
+  }
+
+  /* The 2D path knows its own parts up front — they are the SPECS entries — so
+     its legend is a plain map rather than a walk of a loaded scene. Same
+     markup and same colour rule as the GLB legend. */
+  function procLegend(stage, parts) {
+    var labelled = (parts || []).filter(function (p) { return p.label; });
+    if (labelled.length < 2) return;
+    var list = el("ul", { class: "v3d__legend", "aria-label": "Parts of this model" });
+    labelled.forEach(function (p) {
+      list.appendChild(el("li", { class: "v3d__legend-item" }, [
+        el("span", { class: "v3d__legend-dot", style: "background:" + swatchOf(p.color) }),
+        el("span", { text: p.label })
+      ]));
+    });
+    placeLegend(stage, list);
+  }
+
+  /* The legend sits after the stage, not inside it. `render()` builds the
+     stage before appending it to the page, so on the procedural path there is
+     no parent to insert against yet — wait a frame in that case. */
+  function placeLegend(stage, list) {
+    if (stage.parentNode) { stage.parentNode.insertBefore(list, stage.nextSibling); return; }
+    requestAnimationFrame(function () {
+      if (stage.parentNode) stage.parentNode.insertBefore(list, stage.nextSibling);
+    });
   }
 
   /* ---------- real GLB mount via bundled three.js ---------- */
@@ -4141,12 +4168,178 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     return m.indexOf("/") >= 0 ? m : "models/" + m;
   }
 
+  /* ---------- captions ----------
+     What each part of a loaded GLB is called, and what it does.
+
+     Keyed by the name the *file* carries, not the name three.js hands back:
+     GLTFLoader runs every node name through PropertyBinding.sanitizeNodeName,
+     which turns spaces into underscores and deletes `[].:/` outright — so
+     "Femur.r" arrives on the Object3D as "Femurr". `nameIndex` below reads the
+     originals back out of the loader's own association map instead, so a key
+     here is the string you would see in a glTF viewer.
+
+     Most of these models already name their parts in plain anatomy ("Frontal
+     bone", "Rib (3rd).r"), so an entry is only needed where the name is a
+     shorthand the file invented — the trimesh-built eye and cell — or where a
+     part deserves a line of explanation. `prettyName` handles the rest, which
+     is why 147 skeleton bones need no table. */
+  var CAPTIONS = {
+    eye: {
+      parts: {
+        sclera: { label: "Sclera", desc: "The tough white outer coat that holds the eye's shape." },
+        iris: { label: "Iris", desc: "The coloured ring of muscle that opens and closes the pupil." },
+        pupil: { label: "Pupil", desc: "The opening light passes through — it is a hole, not a part." },
+        cornea: { label: "Cornea", desc: "The clear front dome. It does most of the focusing." },
+        optic_nerve: { label: "Optic nerve", desc: "Carries signals from the retina to the brain." }
+      }
+    },
+    cell: {
+      parts: {
+        membrane: { label: "Cell membrane", desc: "Controls what enters and leaves the cell." },
+        nucleus: { label: "Nucleus", desc: "Holds the DNA and directs the cell's activity." },
+        nucleolus: { label: "Nucleolus", desc: "Inside the nucleus — builds ribosomes." },
+        "mito_*": { label: "Mitochondrion", desc: "Makes ATP by cellular respiration. The powerhouse." },
+        "er_*": { label: "Endoplasmic reticulum / Golgi", desc: "Folds, packages and ships proteins." },
+        "vesicle_*": { label: "Vesicle", desc: "A small sac moving cargo around the cell." }
+      }
+    },
+    /* Two single-mesh models. Their whole body is one node, so there is nothing
+       to label part by part — see the note on `wholeOnly` in mountGL. */
+    brain: {
+      whole: { label: "Brain", desc: "Cerebrum, cerebellum and brainstem. Switch to Info for the labelled diagram of each region." }
+    },
+    dna: {
+      whole: { label: "DNA double helix", desc: "Two sugar-phosphate backbones wound around paired bases. Switch to Info for the labelled diagram." }
+    },
+    /* The Blender-exported models group their nodes by tissue at the scene
+       root. Those groups are the legend. */
+    groups: {
+      Bones: "Bone", Bones_right: "Bone", Cartilages: "Cartilage", Cartilages_right: "Cartilage",
+      Muscles: "Muscle", Ligaments: "Ligament", Fascia: "Fascia", Bursae: "Bursa",
+      Veins: "Vein", Arteries: "Artery", Nerves: "Nerve", Overlays: "Overlay"
+    }
+  };
+
+  /* Eight hues, used when a model's own materials cannot supply a colour —
+     most of the downloaded models are textured and report a flat white base
+     colour, which would make every chip and every swatch identical. Picked by
+     a hash of the part's group so the same tissue keeps the same colour across
+     a whole model, and across visits. */
+  var PART_HUES = ["#f2777a", "#f0a35e", "#ffd479", "#7fd88f", "#6fc3df", "#8f9ad6", "#d68fc9", "#c3cfd6"];
+
+  function hueFor(key) {
+    var h = 0;
+    for (var i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+    return PART_HUES[h % PART_HUES.length];
+  }
+
+  /* A material colour is only worth using when it actually says something.
+     Near-white (an untinted texture base) and near-black both fail here. */
+  function materialColor(mesh) {
+    var mat = mesh && mesh.material;
+    if (!mat || Array.isArray(mat) || !mat.color) return null;
+    var c = mat.color;
+    var max = Math.max(c.r, c.g, c.b), min = Math.min(c.r, c.g, c.b);
+    if (max > 0.92 && max - min < 0.06) return null;   // white-ish
+    if (max < 0.08) return null;                        // black-ish
+    return "#" + mat.color.getHexString();
+  }
+
+  /* "Femur.r" -> "Femur (right)", "optic_nerve" -> "Optic nerve".
+     The `.r` / `.l` suffix is the Blender side-of-body convention these models
+     use; spelling it out is the whole reason this exists. */
+  function prettyName(name) {
+    var s = String(name || "").replace(/\.+$/, "");
+    var side = "";
+    var m = s.match(/[._](r|l)$/i);
+    if (m) { side = m[1].toLowerCase() === "r" ? " (right)" : " (left)"; s = s.slice(0, -2); }
+    s = s.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    return s.charAt(0).toUpperCase() + s.slice(1) + side;
+  }
+
+  /* Exact key first, then a `prefix_*` wildcard — which is what lets one entry
+     cover mito_0, mito_1 and mito_2. */
+  function captionFor(topicId, name) {
+    var table = (CAPTIONS[topicId] && CAPTIONS[topicId].parts) || null;
+    if (table) {
+      if (table[name]) return table[name];
+      var cut = name.lastIndexOf("_");
+      if (cut > 0 && table[name.slice(0, cut) + "_*"]) return table[name.slice(0, cut) + "_*"];
+    }
+    var label = prettyName(name);
+    return label ? { label: label, desc: "" } : null;
+  }
+
+  /* A multi-primitive mesh becomes a Group whose children carry no node
+     association, so walk up until a named ancestor turns up. Returns the part
+     and, separately, the tissue group it sits in. */
+  function describePart(names, stopAt, object) {
+    var part = null, group = null, o = object;
+    while (o && o !== stopAt) {
+      var name = names.get(o);
+      if (name) {
+        if (CAPTIONS.groups[name]) group = CAPTIONS.groups[name];
+        else if (!part) part = name;
+      }
+      o = o.parent;
+    }
+    return { part: part, group: group };
+  }
+
+  /* The one place a part's colour is decided. The hover chip, the highlight
+     and the legend swatch all call this, which is what makes them agree
+     without a second palette to keep in step. */
+  function colorOf(mesh, found, topicId) {
+    return materialColor(mesh) || hueFor(found.group || found.part || topicId);
+  }
+
+  /* The legend under the stage. Tissue groups when the model has them (the
+     Blender exports do), individual parts when it does not (the trimesh ones
+     do not), and nothing at all for a single-mesh model where the chip has
+     already said everything there is to say.
+
+     Capped: overview-skeleton has 147 bones, and a legend that long is a wall,
+     not a key. The model itself is the index — the legend only has to say what
+     kinds of thing are in there. */
+  var LEGEND_MAX = 14;
+
+  function buildLegend(stage, topic, root, names) {
+    if (CAPTIONS[topic.id] && CAPTIONS[topic.id].whole) return;
+    var order = [], seen = Object.create(null);
+    root.traverse(function (o) {
+      if (!o.isMesh) return;
+      var found = describePart(names, root.parent, o);
+      var key = found.group || found.part;
+      if (!key || seen[key]) return;
+      var caption = found.group ? { label: found.group } : captionFor(topic.id, found.part);
+      if (!caption) return;
+      seen[key] = true;
+      order.push({ label: caption.label, color: colorOf(o, found, topic.id) });
+    });
+    if (order.length < 2) return;
+    var extra = order.length - LEGEND_MAX;
+    var list = el("ul", { class: "v3d__legend", "aria-label": "Parts of this model" });
+    order.slice(0, LEGEND_MAX).forEach(function (entry) {
+      list.appendChild(el("li", { class: "v3d__legend-item" }, [
+        el("span", { class: "v3d__legend-dot", style: "background:" + entry.color }),
+        el("span", { text: entry.label })
+      ]));
+    });
+    if (extra > 0) list.appendChild(el("li", { class: "v3d__legend-more", text: "+" + extra + " more — hover the model" }));
+    placeLegend(stage, list);
+  }
+
   function mountGL(stage, topic) {
     stage.innerHTML = "";
     var canvas = el("canvas", { class: "v3d__gl" });
     stage.appendChild(canvas);
     var hint = el("div", { class: "viewer__hint", text: "Loading 3D model…" });
     stage.appendChild(hint);
+    // Follows the cursor. Hidden until something is actually under it, so an
+    // empty chip never sits over the model.
+    var chip = el("div", { class: "v3d__chip", hidden: true });
+    stage.appendChild(chip);
 
     function fallback() { mountProc(stage, topic); }
 
@@ -4184,9 +4377,149 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       var raf = 0, disposed = false;
       function loop() { if (disposed) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }
 
+      /* ---------- picking: hover to name a part, click to pin it ----------
+         OrbitControls listens on this same canvas, so every one of these
+         handlers has to assume the pointer might be mid-orbit. `travel` is
+         what separates a click from a drag: a rotate that happens to end over
+         a bone should not pin that bone. */
+      var pickRoot = null;                 // set once the model is in the scene
+      var names = new Map();               // Object3D -> the name the file carries
+      var hover = null;                    // the mesh currently lit
+      var hoverEmissive = null;            // its emissive colour before we touched it
+      var raycaster = new THREE.Raycaster();
+      var pointer = new THREE.Vector2();
+      var pickQueued = false, travel = 0, lastX = 0, lastY = 0;
+
+      /* The name three.js puts on the Object3D has been through
+         sanitizeNodeName. The loader's association map still points at the
+         original glTF node, so read the name back from there. */
+      function indexNames(gltf, root) {
+        var json = gltf.parser && gltf.parser.json;
+        var assoc = gltf.parser && gltf.parser.associations;
+        if (!json || !json.nodes || !assoc) return;
+        assoc.forEach(function (mapping, object) {
+          if (!mapping || mapping.nodes == null || !object.isObject3D) return;
+          var def = json.nodes[mapping.nodes];
+          if (def && def.name) names.set(object, def.name);
+        });
+        // Anything the map missed still has its sanitized name, which is
+        // better than nothing.
+        root.traverse(function (o) { if (!names.has(o) && o.name) names.set(o, o.name); });
+      }
+
+      function describe(object) { return describePart(names, pickRoot, object); }
+
+      function colorFor(mesh, found) { return colorOf(mesh, found, topic.id); }
+
+      function lift(mesh, color) {
+        drop();
+        var mat = mesh && mesh.material;
+        if (!mat || Array.isArray(mat) || !mat.emissive) return;
+        hover = mesh; hoverEmissive = mat.emissive.getHex();
+        mat.emissive.set(color); mat.emissiveIntensity = 0.45;
+      }
+
+      function drop() {
+        if (!hover) return;
+        var mat = hover.material;
+        if (mat && !Array.isArray(mat) && mat.emissive && hoverEmissive != null) mat.emissive.setHex(hoverEmissive);
+        hover = null; hoverEmissive = null;
+      }
+
+      function clearChip() { drop(); chip.hidden = true; }
+
+      function pick(x, y) {
+        if (!pickRoot) return null;
+        var rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        pointer.x = ((x - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((y - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        var hits = raycaster.intersectObject(pickRoot, true);
+        for (var i = 0; i < hits.length; i++) {
+          if (hits[i].object && hits[i].object.visible) return hits[i].object;
+        }
+        return null;
+      }
+
+      /* What a hit resolves to: the caption, its colour, and the mesh, or null
+         when the pointer is over empty space. `wholeOnly` covers brain.glb and
+         dna.glb — one merged mesh apiece, so there is one honest answer for
+         the whole model rather than a per-region lie. */
+      function readAt(x, y) {
+        var mesh = pick(x, y);
+        if (!mesh) return null;
+        var whole = CAPTIONS[topic.id] && CAPTIONS[topic.id].whole;
+        if (whole) return { caption: whole, color: colorFor(mesh, {}), mesh: mesh, group: null };
+        var found = describe(mesh);
+        if (!found.part && !found.group) return null;
+        var caption = found.part ? captionFor(topic.id, found.part) : { label: found.group, desc: "" };
+        if (!caption) return null;
+        return { caption: caption, color: colorFor(mesh, found), mesh: mesh, group: found.group };
+      }
+
+      function showChip(read, x, y) {
+        var rect = stage.getBoundingClientRect();
+        chip.innerHTML = '<span class="v3d__chip-dot"></span><span class="v3d__chip-text">' +
+          U.esc(read.caption.label) + "</span>" +
+          (read.group ? '<span class="v3d__chip-group">' + U.esc(read.group) + "</span>" : "");
+        chip.style.setProperty("--chip", read.color);
+        chip.style.left = Math.max(8, Math.min(rect.width - 8, x - rect.left)) + "px";
+        chip.style.top = Math.max(8, y - rect.top) + "px";
+        chip.hidden = false;
+      }
+
+      /* Written the same way the procedural `node()` handler writes it, so a
+         pinned GLB part and a pinned 2D part read identically. */
+      function pin(read) {
+        var panel = document.getElementById("v3dPart");
+        if (!panel) return;
+        panel.innerHTML = '<span class="v3d__pin-dot" style="background:' + U.esc(read.color) + '"></span>' +
+          "<strong>" + U.esc(read.caption.label) + "</strong>" +
+          (read.group ? ' <span class="v3d__pin-group">' + U.esc(read.group) + "</span>" : "") +
+          (read.caption.desc ? " — " + U.esc(read.caption.desc) : "");
+      }
+
+      function onMove(e) {
+        travel += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+        lastX = e.clientX; lastY = e.clientY;
+        if (pickQueued) return;
+        pickQueued = true;
+        requestAnimationFrame(function () {
+          pickQueued = false;
+          if (disposed) return;
+          var read = readAt(lastX, lastY);
+          if (!read) { clearChip(); return; }
+          lift(read.mesh, read.color);
+          showChip(read, lastX, lastY);
+        });
+      }
+
+      function onDown(e) { travel = 0; lastX = e.clientX; lastY = e.clientY; }
+
+      function onUp(e) {
+        if (travel > 6) return;             // that was an orbit, not a tap
+        var read = readAt(e.clientX, e.clientY);
+        if (!read) return;
+        lift(read.mesh, read.color);
+        showChip(read, e.clientX, e.clientY);
+        pin(read);
+      }
+
+      canvas.addEventListener("pointermove", onMove);
+      canvas.addEventListener("pointerdown", onDown);
+      canvas.addEventListener("pointerup", onUp);
+      canvas.addEventListener("pointerleave", clearChip);
+
       function dispose() {
         if (disposed) return;
         disposed = true; cancelAnimationFrame(raf);
+        drop();                             // put the lit material back before disposing it
+        canvas.removeEventListener("pointermove", onMove);
+        canvas.removeEventListener("pointerdown", onDown);
+        canvas.removeEventListener("pointerup", onUp);
+        canvas.removeEventListener("pointerleave", clearChip);
+        names.clear(); pickRoot = null;
         if (ro) ro.disconnect(); else window.removeEventListener("resize", resize);
         controls.dispose();
         scene.traverse(function (o) {
@@ -4217,7 +4550,10 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
         group.scale.setScalar(1.7 / maxDim);
         scene.add(group);
         controls.target.set(0, 0, 0); controls.update();
-        hint.textContent = "Drag to rotate · scroll to zoom";
+        indexNames(gltf, root);
+        pickRoot = group;
+        buildLegend(stage, topic, root, names);
+        hint.textContent = "Drag to rotate · scroll to zoom · hover a part to name it";
         loop();
       }, undefined, function () { dispose(); fallback(); });
     }
@@ -4268,15 +4604,31 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     if (cfg.label) {
       var lab = el("span", { class: "v3d__label", text: cfg.label });
       n.appendChild(lab);
-      n.addEventListener("click", function (e) { e.stopPropagation(); var p = document.getElementById("v3dPart"); if (p) p.innerHTML = "<strong>" + U.esc(cfg.label) + "</strong>" + (cfg.desc ? " — " + U.esc(cfg.desc) : ""); });
+      // Same pinned markup as the GLB path, down to the colour dot, so a part
+      // reads the same whether it came out of a .glb or out of SPECS.
+      var dot = swatchOf(cfg.color);
+      n.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var p = document.getElementById("v3dPart");
+        if (p) p.innerHTML = '<span class="v3d__pin-dot" style="background:' + U.esc(dot) + '"></span>' +
+          "<strong>" + U.esc(cfg.label) + "</strong>" + (cfg.desc ? " — " + U.esc(cfg.desc) : "");
+      });
     }
     return n;
+  }
+
+  /* The solid end of one of the COL gradients, for a swatch that has to be a
+     flat colour. Falls back to the accent when the string is already flat. */
+  function swatchOf(css) {
+    var hexes = String(css || "").match(/#[0-9a-f]{3,8}/gi);
+    return hexes ? hexes[hexes.length - 1] : "var(--primary)";
   }
 
   function buildModel(scene, topic) {
     scene.innerHTML = "";
     var parts = SPECS[topic.proc] ? SPECS[topic.proc](topic) : SPECS.generic(topic);
     parts.forEach(function (p) { scene.appendChild(node(p)); });
+    return parts;
   }
 
   var COL = {
@@ -4391,7 +4743,29 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
       "box-shadow:inset -6px -8px 16px rgba(0,0,0,.35),0 8px 22px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;cursor:pointer}" +
       ".v3d__box{border-radius:10px}" +
       ".v3d__label{position:absolute;top:-6px;left:50%;transform:translate(-50%,-100%);background:rgba(8,55,66,.9);color:#eafcff;font-size:11px;font-weight:700;" +
-      "padding:2px 7px;border-radius:999px;white-space:nowrap;pointer-events:none}";
+      "padding:2px 7px;border-radius:999px;white-space:nowrap;pointer-events:none}" +
+      /* The caption chip rides the cursor over the canvas. `.v3d` paints its
+         own dark gradient whatever the theme is doing, so these colours are
+         fixed light-on-dark rather than var(--fg) — same call `.v3d__label`
+         already made. `--chip` is the part's own colour, set per hover. */
+      ".v3d__chip{position:absolute;z-index:6;transform:translate(-50%,calc(-100% - 14px));display:flex;align-items:center;gap:6px;max-width:min(78%,320px);" +
+      "background:rgba(6,20,26,.92);border:1px solid var(--chip,#6fc3df);border-radius:999px;padding:4px 10px;pointer-events:none;" +
+      "box-shadow:0 6px 18px rgba(0,0,0,.45);backdrop-filter:blur(4px)}" +
+      ".v3d__chip-dot{width:9px;height:9px;border-radius:50%;background:var(--chip,#6fc3df);flex:0 0 auto}" +
+      ".v3d__chip-text{color:#eafcff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".v3d__chip-group{color:rgba(234,252,255,.62);font-size:11px;white-space:nowrap}" +
+      ".v3d__node{transition:filter .12s ease}" +
+      ".v3d__node:hover{filter:brightness(1.25) saturate(1.15)}" +
+      /* The pinned line in #v3dPart, and the legend below the stage. Both take
+         each part's colour from `colorOf`, which is also what tints the chip —
+         one source, so they cannot drift apart. */
+      ".v3d__pin-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:baseline}" +
+      ".v3d__pin-group{color:var(--muted-fg);font-size:var(--fs-xs)}" +
+      ".v3d__legend{display:flex;flex-wrap:wrap;gap:6px 12px;list-style:none;margin:10px 0 0;padding:0}" +
+      ".v3d__legend-item{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--muted-fg)}" +
+      ".v3d__legend-dot{width:10px;height:10px;border-radius:3px;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.25) inset}" +
+      ".v3d__legend-more{font-size:var(--fs-xs);color:var(--muted-fg);opacity:.8}" +
+      "@media (prefers-reduced-motion: reduce){.v3d__node{transition:none}}";
     document.head.appendChild(el("style", { id: "v3d-style", html: css }));
   }
 
