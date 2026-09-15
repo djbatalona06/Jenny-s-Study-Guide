@@ -979,18 +979,18 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
   /* ---- 3D anatomy topics. `model` points at models/<file>.glb if bundled;
      the viewer renders a labeled procedural model when a GLB is absent. ---- */
   D.topics = [
-    { id: "heart", name: "Heart", emoji: "🫀", model: "heart.glb", proc: "heart", deck: "anatomy", blurb: "Four chambers, valves, and the path of blood flow through the cardiovascular system." },
-    { id: "skeleton", name: "Skeletal System", emoji: "🦴", model: "overview-skeleton.glb", glb: true, proc: "skeleton", deck: "anatomy", blurb: "206 bones forming the axial and appendicular skeleton — full-body overview." },
-    { id: "skull", name: "Skull", emoji: "💀", model: "skull.glb", proc: "skull", deck: "anatomy", blurb: "Cranial and facial bones protecting the brain." },
-    { id: "lungs", name: "Respiratory", emoji: "🫁", model: "overview-skeleton.glb", glb: true, placeholder: true, proc: "lungs", deck: "anatomy", blurb: "Airways and lungs that exchange oxygen and carbon dioxide." },
-    { id: "brain", name: "Brain", emoji: "🧠", model: "brain.glb", glb: true, proc: "brain", deck: "anatomy", blurb: "Cerebrum, cerebellum, and brainstem of the central nervous system." },
-    { id: "eye", name: "Eye", emoji: "👁️", model: "eye.glb", glb: true, proc: "eye", deck: "anatomy", blurb: "Cornea, iris, lens, and retina — how the eye focuses light and turns it into signals for the brain." },
-    { id: "cell", name: "Animal Cell", emoji: "🦠", model: "cell.glb", glb: true, proc: "cell", deck: "teas-science", blurb: "Organelles: nucleus, mitochondria, ER, and more — core TEAS science." },
-    { id: "kidney", name: "Kidney", emoji: "🫘", model: "overview-skeleton.glb", glb: true, placeholder: true, proc: "kidney", deck: "anatomy", blurb: "Filters blood and forms urine in the urinary system." },
-    { id: "dna", name: "DNA", emoji: "🧬", model: "dna.glb", glb: true, proc: "dna", deck: "teas-science", blurb: "The double helix carrying genetic information." },
-    { id: "upper-limb", name: "Upper Limb", emoji: "💪", model: "upper-limb.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Bones and structures of the arm, forearm, and shoulder girdle." },
-    { id: "lower-limb", name: "Lower Limb", emoji: "🦵", model: "lower-limb.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Bones and structures of the thigh, leg, and pelvic girdle." },
-    { id: "hand", name: "Hand", emoji: "🖐️", model: "hand.glb", glb: true, proc: "generic", deck: "anatomy", blurb: "Carpals, metacarpals, and phalanges of the hand and wrist." }
+    { id: "heart",      name: "Heart",          emoji: "🫀", model: "heart.glb",             proc: "heart",    deck: "anatomy",      atlasSystem: "cardiac",        blurb: "Four chambers, valves, and the path of blood flow through the cardiovascular system." },
+    { id: "skeleton",   name: "Skeletal System",emoji: "🦴", model: "overview-skeleton.glb",  glb: true, proc: "skeleton", deck: "anatomy",      atlasSystem: "skeletal",       blurb: "206 bones forming the axial and appendicular skeleton — full-body overview." },
+    { id: "skull",      name: "Skull",          emoji: "💀", model: "skull.glb",              proc: "skull",    deck: "anatomy",      atlasSystem: "skeletal",       blurb: "Cranial and facial bones protecting the brain." },
+    { id: "lungs",      name: "Respiratory",    emoji: "🫁", model: "overview-skeleton.glb",  glb: true, placeholder: true, proc: "lungs", deck: "anatomy", atlasSystem: "respiratory", blurb: "Airways and lungs that exchange oxygen and carbon dioxide." },
+    { id: "brain",      name: "Brain",          emoji: "🧠", model: "brain.glb",              glb: true, proc: "brain",    deck: "anatomy",      atlasSystem: "nervous",        blurb: "Cerebrum, cerebellum, and brainstem of the central nervous system." },
+    { id: "eye",        name: "Eye",            emoji: "👁️", model: "eye.glb",               glb: true, proc: "eye",     deck: "anatomy",      atlasSystem: "sensory",        blurb: "Cornea, iris, lens, and retina — how the eye focuses light and turns it into signals for the brain." },
+    { id: "cell",       name: "Animal Cell",    emoji: "🦠", model: "cell.glb",               glb: true, proc: "cell",    deck: "teas-science",                                 blurb: "Organelles: nucleus, mitochondria, ER, and more — core TEAS science." },
+    { id: "kidney",     name: "Kidney",         emoji: "🫘", model: "overview-skeleton.glb",  glb: true, placeholder: true, proc: "kidney", deck: "anatomy", atlasSystem: "urinary",    blurb: "Filters blood and forms urine in the urinary system." },
+    { id: "dna",        name: "DNA",            emoji: "🧬", model: "dna.glb",                glb: true, proc: "dna",     deck: "teas-science",                                 blurb: "The double helix carrying genetic information." },
+    { id: "upper-limb", name: "Upper Limb",     emoji: "💪", model: "upper-limb.glb",         glb: true, proc: "generic", deck: "anatomy",      atlasSystem: "muscular",       blurb: "Bones and structures of the arm, forearm, and shoulder girdle." },
+    { id: "lower-limb", name: "Lower Limb",     emoji: "🦵", model: "lower-limb.glb",         glb: true, proc: "generic", deck: "anatomy",      atlasSystem: "muscular",       blurb: "Bones and structures of the thigh, leg, and pelvic girdle." },
+    { id: "hand",       name: "Hand",           emoji: "🖐️", model: "hand.glb",              glb: true, proc: "generic", deck: "anatomy",      atlasSystem: "skeletal",       blurb: "Carpals, metacarpals, and phalanges of the hand and wrist." }
   ];
 
   /* ---- BSN / TEAS pathway guides (shown in the Library tab). Markdown bodies. ---- */
@@ -4094,9 +4094,11 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     wrap.appendChild(tabBar);
 
     if (activeTab === "3d") {
-      // stage — real GLB via three.js when available, else procedural CSS-3D.
+      // stage — atlas mesh (human-atlas) > GLB > procedural CSS-3D.
       var stage = el("div", { class: "v3d", role: "img", "aria-label": "3D model of " + topic.name, style: "position:relative" });
-      if (topic.glb) {
+      if (topic.atlasSystem && window.MA && MA.atlas3D) {
+        mountAtlas(stage, topic);
+      } else if (topic.glb) {
         mountGL(stage, topic);
         if (topic.placeholder) {
           stage.appendChild(el("div", { class: "v3d__placeholder-banner", text: "⚠ Stand-in model (Skeleton) — " + topic.name + " GLB coming soon" }));
@@ -4769,7 +4771,229 @@ label { font-size: var(--fs-sm); font-weight: 600; color: var(--fg-soft); displa
     document.head.appendChild(el("style", { id: "v3d-style", html: css }));
   }
 
+  /* ---------- atlas mesh mount (human-atlas BodyParts3D geometry) ---------- */
+  function mountAtlas(stage, topic) {
+    stage.innerHTML = "";
+    var canvas = el("canvas", { class: "v3d__gl" });
+    stage.appendChild(canvas);
+    var hint = el("div", { class: "viewer__hint", text: "Loading anatomy data…" });
+    stage.appendChild(hint);
+    var chip = el("div", { class: "v3d__chip", hidden: true });
+    stage.appendChild(chip);
+
+    function fallback() {
+      if (topic.glb) mountGL(stage, topic); else mountProc(stage, topic);
+    }
+
+    MA.atlas3D.ready.then(function () {
+      var M = window.MA3D;
+      if (!M || !M.THREE) { fallback(); return; }
+      var THREE = M.THREE;
+
+      var w = stage.clientWidth || 320, h = Math.round(w * 0.75);
+      canvas.width = w; canvas.height = h;
+
+      var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      renderer.setSize(w, h, false);
+      if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+      var scene  = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(45, w / h, 0.0001, 200);
+      var controls = new M.OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      var sun = new THREE.DirectionalLight(0xffffff, 1.1);
+      sun.position.set(1, 2, 3);
+      scene.add(sun);
+
+      hint.textContent = "Building " + topic.name + "…";
+
+      MA.atlas3D.fetchSystemMesh(topic.atlasSystem, 30).then(function (mesh) {
+        var geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+        geo.setAttribute("normal",   new THREE.BufferAttribute(mesh.normals,   3));
+        geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+        geo.computeBoundingSphere();
+
+        var bs = geo.boundingSphere, c = bs.center, r = bs.radius || 0.1;
+        camera.position.set(c.x, c.y, c.z + r * 2.6);
+        camera.lookAt(c.x, c.y, c.z);
+        controls.target.set(c.x, c.y, c.z);
+        controls.update();
+
+        var mat = new THREE.MeshPhongMaterial({ color: 0xe8a090, shininess: 40, side: THREE.DoubleSide });
+        scene.add(new THREE.Mesh(geo, mat));
+
+        hint.textContent = "Drag to rotate · scroll to zoom";
+        hint.style.opacity = "0.55";
+
+        var animId, live = true;
+        (function loop() {
+          if (!live) return;
+          animId = requestAnimationFrame(loop);
+          controls.update();
+          renderer.render(scene, camera);
+        })();
+
+        /* Stop rendering when stage leaves the DOM. */
+        var obs = new MutationObserver(function () {
+          if (!document.contains(stage)) {
+            live = false;
+            cancelAnimationFrame(animId);
+            renderer.dispose();
+            obs.disconnect();
+          }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+
+      }).catch(function (e) { console.warn("atlas viewer:", e); fallback(); });
+    }).catch(function () { fallback(); });
+  }
+
   MA.viewer3d = { title: "Anatomy 3D", render: render };
+})();
+
+</script>
+<script>
+/* ---- js/modules/atlas3d.js ---- */
+/* atlas3d.js — loads BodyParts3D meshes from human-atlas (https://human-atlas-seven.vercel.app)
+   to supply high-quality anatomy geometry to the 3D viewer. Files are served with
+   wildcard CORS; the service worker caches them cross-origin after first load. */
+(function () {
+  "use strict";
+  var MA = window.MA;
+
+  var ATLAS_ORIGIN = "https://human-atlas-seven.vercel.app";
+  var ATLAS_URL    = ATLAS_ORIGIN + "/models/atlas.json";
+
+  /* In-memory decompressed chunk buffers. Each is ~4 MB; we only load the
+     chunks that the user actually views so idle tabs pay nothing. */
+  var _chunks = {};
+
+  var _atlas = null;
+  var _ok, _fail;
+  var ready = new Promise(function (res, rej) { _ok = res; _fail = rej; });
+
+  fetch(ATLAS_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("atlas.json HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) { _atlas = data; _ok(data); })
+    .catch(function (e) { console.warn("MA.atlas3D:", e); _fail(e); });
+
+  /* Parts for a system, largest-vertex-count first so a capped load picks the
+     most visually prominent structures. */
+  function partsForSystem(sys) {
+    if (!_atlas) return [];
+    return (_atlas.parts || [])
+      .filter(function (p) { return p.system === sys; })
+      .sort(function (a, b) { return b.vertexCount - a.vertexCount; });
+  }
+
+  /* Deduplicated part names for a system — used as MCQ distractor pool. */
+  function conceptsForSystem(sys) {
+    var seen = Object.create(null), out = [];
+    partsForSystem(sys).forEach(function (p) {
+      if (!seen[p.name]) { seen[p.name] = true; out.push(p.name); }
+    });
+    return out;
+  }
+
+  /* Decompress a .bin.gz chunk and cache it. */
+  function _loadChunk(idx) {
+    if (_chunks[idx]) return Promise.resolve(_chunks[idx]);
+    var url = ATLAS_ORIGIN + "/models/body-" + idx + ".bin.gz";
+    return fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("chunk " + idx + " HTTP " + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function (gz) {
+        var sig = new Uint8Array(gz, 0, Math.min(2, gz.byteLength));
+        if (sig[0] !== 0x1f || sig[1] !== 0x8b) {
+          _chunks[idx] = gz; return gz;
+        }
+        return new Response(
+          new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))
+        ).arrayBuffer().then(function (buf) { _chunks[idx] = buf; return buf; });
+      });
+  }
+
+  /* Slice one part out of an already-loaded chunk buffer. Normals are Int16
+     quantized (÷32767 → Float32); positions are plain Float32; indices Uint32. */
+  function _slicePart(part, buf) {
+    var v = part.vertexCount;
+    var posRaw = new Float32Array(buf, part.positions, v * 3);
+    var nrmRaw = new Int16Array(buf, part.normals, v * 3);
+    var idxRaw = new Uint32Array(buf, part.indices, part.indexCount);
+
+    var positions = new Float32Array(v * 3);
+    positions.set(posRaw);                        // own copy so chunk can be GC'd
+
+    var normals = new Float32Array(v * 3);
+    for (var i = 0; i < nrmRaw.length; i++) normals[i] = nrmRaw[i] / 32767;
+
+    var indices = new Uint32Array(part.indexCount);
+    indices.set(idxRaw);
+
+    return { positions: positions, normals: normals, indices: indices, name: part.name };
+  }
+
+  /* Fetch a single part's mesh. */
+  function fetchMesh(part) {
+    return _loadChunk(part.chunk).then(function (buf) { return _slicePart(part, buf); });
+  }
+
+  /* Fetch up to `limit` parts from a system and merge them into one mesh.
+     Parts are grouped by chunk so each chunk downloads only once. */
+  function fetchSystemMesh(sys, limit) {
+    var parts = partsForSystem(sys).slice(0, limit || 30);
+    var byChunk = {};
+    parts.forEach(function (p) {
+      (byChunk[p.chunk] || (byChunk[p.chunk] = [])).push(p);
+    });
+    return Promise.all(
+      Object.keys(byChunk).map(function (ci) {
+        return _loadChunk(Number(ci)).then(function (buf) {
+          return byChunk[ci].map(function (p) { return _slicePart(p, buf); });
+        });
+      })
+    ).then(function (groups) {
+      var meshes = [];
+      groups.forEach(function (g) { g.forEach(function (m) { meshes.push(m); }); });
+      return _merge(meshes);
+    });
+  }
+
+  /* Concatenate all meshes into one {positions, normals, indices}. */
+  function _merge(meshes) {
+    var tv = 0, ti = 0;
+    meshes.forEach(function (m) { tv += m.positions.length; ti += m.indices.length; });
+    var positions = new Float32Array(tv);
+    var normals   = new Float32Array(tv);
+    var indices   = new Uint32Array(ti);
+    var vOff = 0, iOff = 0, vBase = 0;
+    meshes.forEach(function (m) {
+      positions.set(m.positions, vOff);
+      normals.set(m.normals, vOff);
+      for (var i = 0; i < m.indices.length; i++) indices[iOff + i] = m.indices[i] + vBase;
+      vBase += m.positions.length / 3;
+      vOff  += m.positions.length;
+      iOff  += m.indices.length;
+    });
+    return { positions: positions, normals: normals, indices: indices };
+  }
+
+  MA.atlas3D = {
+    ready:             ready,
+    partsForSystem:    partsForSystem,
+    conceptsForSystem: conceptsForSystem,
+    fetchMesh:         fetchMesh,
+    fetchSystemMesh:   fetchSystemMesh
+  };
 })();
 
 </script>

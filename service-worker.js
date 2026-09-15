@@ -4,7 +4,9 @@
    else so the app keeps working offline. Bump CACHE when the shell changes. */
 "use strict";
 
-var CACHE = "ma-study-v5";
+var CACHE = "ma-study-v6";
+var ATLAS_ORIGIN = "https://human-atlas-seven.vercel.app";
+var ATLAS_CACHE  = "atlas-models-v1";
 var CORE = [
   "./",
   "index.html",
@@ -41,6 +43,24 @@ self.addEventListener("activate", function (e) {
         if (k !== CACHE) return caches.delete(k);
       }));
     }).then(function () { return self.clients.claim(); })
+  );
+});
+
+/* Cross-origin atlas models: cache-first so anatomy views work after first load. */
+self.addEventListener("fetch", function (e) {
+  if (e.request.method !== "GET") return;
+  var url = new URL(e.request.url);
+  if (url.origin !== ATLAS_ORIGIN) return;
+  e.respondWith(
+    caches.open(ATLAS_CACHE).then(function (c) {
+      return caches.match(e.request).then(function (cached) {
+        if (cached) return cached;
+        return fetch(e.request).then(function (res) {
+          if (res && res.ok) c.put(e.request, res.clone());
+          return res;
+        });
+      });
+    })
   );
 });
 
