@@ -4,7 +4,7 @@
    else so the app keeps working offline. Bump CACHE when the shell changes. */
 "use strict";
 
-var CACHE = "ma-study-v6";
+var CACHE = "ma-study-v7";
 var ATLAS_ORIGIN = "https://human-atlas-seven.vercel.app";
 var ATLAS_CACHE  = "atlas-models-v1";
 var CORE = [
